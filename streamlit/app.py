@@ -245,6 +245,88 @@ except Exception:
     pass
 
 
+st.write(
+    "Provide the required parameters and click Run to execute the stored "
+    "procedure CHARACTERIZATION.DCQ.SP_RUN_DCQ. The result (or any error) will be shown below."
+)
+
+show_debug = st.checkbox("Show debug output", value=False)
+
+with st.expander("How to run this app"):
+    st.markdown(
+        """
+        What this app does
+        - Calls `CHARACTERIZATION.DCQ.SP_RUN_DCQ` to execute one or more DCQ check procedures defined in
+          `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY`.
+        - Creates/uses an output schema in the target database: `<DB_PARAM>.CHARACTERIZATION_DCQ`.
+        - Writes run metadata and per-check status to:
+          - `<DB_PARAM>.CHARACTERIZATION_DCQ.DCQ_RUNS`
+          - `<DB_PARAM>.CHARACTERIZATION_DCQ.DCQ_CHECK_LOG`
+          - `<DB_PARAM>.CHARACTERIZATION_DCQ.DCQ_RESULTS` (check procedures typically write results here)
+        - Returns a string like: `OK RUN_ID=<uuid> STATUS=SUCCEEDED|PARTIAL ...`
+
+        Steps
+        1. Select the target
+           - `DB_PARAM`: target database (expected `CHAR_` or `STAGE_`)
+           - `SCHEMA_NAME`: schema within `DB_PARAM` that the checks should evaluate
+
+        2. Choose which checks to run
+           - `PART`: filter checks by `PART` in the registry; `all` runs all enabled checks
+           - `MODE` + `SELECTOR`:
+             - `ALL`: ignore SELECTOR and run all enabled checks (subject to PART)
+             - `CHECK_NAME`: SELECTOR is a comma-separated list of check names
+               Example: `DCQ_CHECK_001, DCQ_CHECK_010`
+             - `CHECK_NUM`: SELECTOR is a comma-separated list of check numbers (decimals allowed)
+               Example: `1, 2, 10.5`
+             - `SOURCE_TABLE`: SELECTOR is a comma-separated list of source tables; matched against the
+               `SOURCE_TABLES` array in the registry
+               Example: `MY_TABLE, OTHER_TABLE`
+
+        3. Optional compare/override parameters
+           - `TARGET_TABLE`: if provided, passed through to check procedures that support it (otherwise `ALL`)
+           - `PREV_DB_PARAM` + `PREV_SCHEMA_NAME`: optional "previous" location. These are only passed to check
+             procedures that accept the additional arguments (the orchestrator detects procedure signatures).
+
+        4. Click Run and review output
+           - The app prints the returned `RUN_ID` string.
+           - Expand "DCQ Check Registry" to see the available checks.
+        """
+    )
+
+
+# ---------------------------------------------------------------------------
+# Expander - show the full DCQ_CHECK_REGISTRY table
+# ---------------------------------------------------------------------------
+with st.expander("DCQ Check Registry"):
+    try:
+        if backend == "snowpark":
+            sess = backend_obj
+            try:
+                df = sess.sql(
+                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY CHECK_NUM, CHECK_NAME"
+                ).to_pandas()
+            except Exception:
+                df = sess.sql(
+                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY ROW_NUM, CHECK_NAME"
+                ).to_pandas()
+
+            if "ROW_NUM" in df.columns and "CHECK_NUM" not in df.columns:
+                df = df.rename(columns={"ROW_NUM": "CHECK_NUM"})
+            st.dataframe(df)
+        else:
+            try:
+                rows = run_query(
+                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY CHECK_NUM, CHECK_NAME"
+                )
+            except Exception:
+                rows = run_query(
+                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY ROW_NUM, CHECK_NAME"
+                )
+            st.dataframe(rows)
+    except Exception as e:
+        st.error(f"Failed to fetch DCQ_CHECK_REGISTRY: {e}")
+
+
 db_options = fetch_databases(("CHAR_", "STAGE_", "PROD_"))
 if not db_options:
     st.error("No target databases found (expected CHAR_/STAGE_/PROD_ prefixes).")
@@ -252,7 +334,10 @@ if not db_options:
 
 db_param = st.selectbox("DB_PARAM (target database)", options=db_options, index=0)
 schema_options = fetch_schemas(db_param)
-schema_name = st.selectbox("SCHEMA_NAME", options=schema_options, index=0 if schema_options else None)
+if not schema_options:
+    st.error(f"No schemas found in database {db_param}.")
+    st.stop()
+schema_name = st.selectbox("SCHEMA_NAME", options=schema_options, index=0)
 
 wh_options = fetch_warehouses("CHARACTERIZATION_")
 default_wh = "CHARACTERIZATION_XS"
@@ -265,6 +350,11 @@ warehouse = st.selectbox(
     index=wh_default_idx,
     format_func=lambda x: x if x else "(Use session default)",
 )
+
+if show_debug:
+    st.write("DEBUG db_options:", db_options)
+    st.write("DEBUG schema_options:", schema_options)
+    st.write("DEBUG warehouse options:", wh_options)
 
 
 tab_dcq, tab_pce, tab_other = st.tabs(["SP_RUN_DCQ", "POTENTIAL_CODE_ERRORS", "Other procedures"])
