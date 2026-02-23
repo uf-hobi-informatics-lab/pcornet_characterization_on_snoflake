@@ -1,0 +1,12 @@
+# Ignore environment files
+.env
+# Python cache
+__pycache__/
+*.pyc
+# OS generated files
+.DS_Store
+# Large binary files
+*.pdf
+*.zip
+# Snowflake JSON data (optional – keep if you want versioned)
+*.json
