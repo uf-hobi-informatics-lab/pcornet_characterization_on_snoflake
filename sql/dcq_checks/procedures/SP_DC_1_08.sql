@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE "SP_DC_1_08"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "RUN_ID" VARCHAR, "TARGET_TABLE" VARCHAR)
+CREATE OR REPLACE PROCEDURE CHARACTERIZATION.DCQ_CHECKS.SP_DC_1_08("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "RUN_ID" VARCHAR, "TARGET_TABLE" VARCHAR)
 RETURNS VARCHAR
 LANGUAGE JAVASCRIPT
 EXECUTE AS CALLER
@@ -6,6 +6,23 @@ AS '
 function q(sqlText, binds) { return snowflake.execute({ sqlText, binds: binds || [] }); }
 function isSafeIdentPart(s) { return /^[A-Za-z0-9_$]+$/.test((s || '''').toString()); }
 function scalar(sqlText, binds) { const rs = q(sqlText, binds || []); rs.next(); return rs.getColumnValue(1); }
+function quoteIdent(name) {
+  const dq = String.fromCharCode(34);
+  return dq + (name || "").toString().replace(/"/g, dq + dq) + dq;
+}
+function resolveColumn(db, schema, table, colName) {
+  const rs = q(
+    `SELECT COLUMN_NAME
+     FROM ${db}.INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ?
+       AND TABLE_NAME = ?
+       AND UPPER(COLUMN_NAME) = UPPER(?)
+     QUALIFY ROW_NUMBER() OVER (ORDER BY COLUMN_NAME) = 1`,
+    [schema.toUpperCase(), table.toUpperCase(), colName]
+  );
+  if (!rs.next()) return null;
+  return rs.getColumnValue(1);
+}
 function tableExists(db, schema, table) {
   const rs = q(
     `SELECT COUNT(*)
@@ -81,6 +98,23 @@ if (!tableExists(DB_PARAM, SCHEMA_NAME, "DEMOGRAPHIC")) {
   );
   return `DC 1.08 ERROR: DEMOGRAPHIC missing`;
 }
+
+const demoPatidColName = resolveColumn(DB_PARAM, SCHEMA_NAME, "DEMOGRAPHIC", "PATID");
+if (!demoPatidColName) {
+  const base = [RUN_ID, checkId, checkName, rowNum, edcTable, "DEMOGRAPHIC"];
+  insertMetric(
+    resultsTbl,
+    base,
+    "PATID",
+    "STATUS",
+    null,
+    "ERROR",
+    true,
+    { message: "DEMOGRAPHIC.PATID column does not exist; cannot evaluate orphan PATIDs." }
+  );
+  return `DC 1.08 ERROR: DEMOGRAPHIC.PATID missing`;
+}
+const demoPatidRef = quoteIdent(demoPatidColName);
 // Tables/columns to check
 const targets = [
   { table: "ENROLLMENT", cols: ["PATID"] },
@@ -124,17 +158,33 @@ for (const t of selected) {
   }
   for (const c of t.cols) {
     const fullTable = `${DB_PARAM}.${SCHEMA_NAME}.${t.table}`;
+    const colName = resolveColumn(DB_PARAM, SCHEMA_NAME, t.table, c);
+    if (!colName) {
+      const base = [RUN_ID, checkId, checkName, rowNum, edcTable, t.table];
+      insertMetric(
+        resultsTbl,
+        base,
+        c,
+        "STATUS",
+        null,
+        "SKIPPED",
+        false,
+        { message: `Column ${c} does not exist` }
+      );
+      continue;
+    }
+    const colRef = quoteIdent(colName);
     // Use anti-join to DEMOGRAPHIC on PATID
     const sql = `
       WITH demo AS (
-        SELECT DISTINCT PATID
+        SELECT DISTINCT ${demoPatidRef} AS PATID
         FROM ${DB_PARAM}.${SCHEMA_NAME}.DEMOGRAPHIC
-        WHERE PATID IS NOT NULL
+        WHERE ${demoPatidRef} IS NOT NULL
       ),
       base AS (
-        SELECT DISTINCT ${c} AS pid
+        SELECT DISTINCT ${colRef} AS pid
         FROM ${fullTable}
-        WHERE ${c} IS NOT NULL
+        WHERE ${colRef} IS NOT NULL
       ),
       orphan AS (
         SELECT b.pid

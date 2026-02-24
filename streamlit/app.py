@@ -367,8 +367,29 @@ with tab_dcq:
     selector = st.text_input("SELECTOR", "", help="Comma-separated values used when MODE is not ALL.")
     part = st.text_input("PART", value="all")
     target_table = st.text_input("TARGET_TABLE (optional)", "", help="Blank defaults to ALL.")
-    prev_db_param = st.text_input("PREV_DB_PARAM (optional)", "")
-    prev_schema_name = st.text_input("PREV_SCHEMA_NAME (optional)", "")
+
+    prod_db_options = fetch_databases(("PROD_",))
+
+    def _on_prev_db_change() -> None:
+        st.session_state.pop("prev_schema", None)
+
+    prev_db_param = st.selectbox(
+        "PREV_DB_PARAM (optional)",
+        options=[""] + prod_db_options,
+        format_func=lambda x: x if x else "(None)",
+        help="Previous DB parameter (PROD_ databases only).",
+        key="prev_db",
+        on_change=_on_prev_db_change,
+    )
+
+    prev_schema_options = fetch_schemas(prev_db_param) if prev_db_param else []
+    prev_schema_name = st.selectbox(
+        "PREV_SCHEMA_NAME (optional)",
+        options=[""] + prev_schema_options,
+        format_func=lambda x: x if x else "(None)",
+        help="Previous schema name (populated from the DB chosen above).",
+        key="prev_schema",
+    )
 
     if st.button("Run SP_RUN_DCQ"):
         with st.spinner("Executing SP_RUN_DCQ..."):
@@ -427,36 +448,63 @@ with tab_dcq:
 
                 st.write(f"Tables: `{runs_tbl}` | `{log_tbl}` | `{res_tbl}`")
 
-                run_rows = run_query(f"SELECT * FROM {runs_tbl} WHERE RUN_ID=%s", (run_id,))
+                if backend == "snowpark":
+                    run_rows = run_query(f"SELECT * FROM {runs_tbl} WHERE RUN_ID = ?", [run_id])
+                else:
+                    run_rows = run_query(f"SELECT * FROM {runs_tbl} WHERE RUN_ID = %s", (run_id,))
                 if run_rows:
                     st.dataframe(run_rows)
 
-                counts = run_query(
-                    f"SELECT STATUS, COUNT(*) AS CNT FROM {log_tbl} WHERE RUN_ID=%s GROUP BY STATUS ORDER BY STATUS",
-                    (run_id,),
-                )
+                if backend == "snowpark":
+                    counts = run_query(
+                        f"SELECT STATUS, COUNT(*) AS CNT FROM {log_tbl} WHERE RUN_ID = ? GROUP BY STATUS ORDER BY STATUS",
+                        [run_id],
+                    )
+                else:
+                    counts = run_query(
+                        f"SELECT STATUS, COUNT(*) AS CNT FROM {log_tbl} WHERE RUN_ID = %s GROUP BY STATUS ORDER BY STATUS",
+                        (run_id,),
+                    )
                 if counts:
                     st.dataframe(counts)
 
-                failures = run_query(
-                    f"""
-                    SELECT CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, ERROR_MESSAGE
-                    FROM {log_tbl}
-                    WHERE RUN_ID=%s AND STATUS <> 'SUCCEEDED'
-                    ORDER BY ROW_NUM, CHECK_NAME
-                    """,
-                    (run_id,),
-                )
+                if backend == "snowpark":
+                    failures = run_query(
+                        f"""
+                        SELECT CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, ERROR_MESSAGE
+                        FROM {log_tbl}
+                        WHERE RUN_ID = ? AND STATUS <> 'SUCCEEDED'
+                        ORDER BY ROW_NUM, CHECK_NAME
+                        """,
+                        [run_id],
+                    )
+                else:
+                    failures = run_query(
+                        f"""
+                        SELECT CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, ERROR_MESSAGE
+                        FROM {log_tbl}
+                        WHERE RUN_ID = %s AND STATUS <> 'SUCCEEDED'
+                        ORDER BY ROW_NUM, CHECK_NAME
+                        """,
+                        (run_id,),
+                    )
                 if failures:
                     st.subheader("Non-succeeded checks")
                     st.dataframe(failures)
 
                 if st.checkbox("Show results rows", value=False, key="show_results_rows"):
                     limit = st.number_input("Max rows", min_value=10, max_value=5000, value=500, step=50)
-                    results = run_query(
-                        f"SELECT * FROM {res_tbl} WHERE RUN_ID=%s ORDER BY CREATED_AT DESC LIMIT {int(limit)}",
-                        (run_id,),
-                    )
+
+                    if backend == "snowpark":
+                        results = run_query(
+                            f"SELECT * FROM {res_tbl} WHERE RUN_ID = ? ORDER BY CREATED_AT DESC LIMIT {int(limit)}",
+                            [run_id],
+                        )
+                    else:
+                        results = run_query(
+                            f"SELECT * FROM {res_tbl} WHERE RUN_ID = %s ORDER BY CREATED_AT DESC LIMIT {int(limit)}",
+                            (run_id,),
+                        )
                     st.dataframe(results)
             except Exception as e:
                 st.error(f"Failed to fetch run details: {e}")

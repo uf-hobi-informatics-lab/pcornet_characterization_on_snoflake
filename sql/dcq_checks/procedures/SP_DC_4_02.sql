@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE "SP_DC_4_02"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "RUN_ID" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR)
+CREATE OR REPLACE PROCEDURE CHARACTERIZATION.DCQ_CHECKS.SP_DC_4_02("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "RUN_ID" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR)
 RETURNS VARCHAR
 LANGUAGE JAVASCRIPT
 EXECUTE AS CALLER
@@ -103,6 +103,21 @@ const defs = [
   { domain: ''PRESCRIBING'', table: ''PRESCRIBING'', patCol: ''PATID'' }
 ];
 
+const curEncounter = {
+  db: DB_PARAM,
+  schema: SCHEMA_NAME,
+  encounter_table_exists: tableExists(DB_PARAM, SCHEMA_NAME, ''ENCOUNTER''),
+  encounterid_col_exists: colExists(DB_PARAM, SCHEMA_NAME, ''ENCOUNTER'', ''ENCOUNTERID''),
+  enc_type_col_exists: colExists(DB_PARAM, SCHEMA_NAME, ''ENCOUNTER'', ''ENC_TYPE'')
+};
+const prevEncounter = {
+  db: PREV_DB_PARAM,
+  schema: PREV_SCHEMA_NAME,
+  encounter_table_exists: tableExists(PREV_DB_PARAM, PREV_SCHEMA_NAME, ''ENCOUNTER''),
+  encounterid_col_exists: colExists(PREV_DB_PARAM, PREV_SCHEMA_NAME, ''ENCOUNTER'', ''ENCOUNTERID''),
+  enc_type_col_exists: colExists(PREV_DB_PARAM, PREV_SCHEMA_NAME, ''ENCOUNTER'', ''ENC_TYPE'')
+};
+
 function prereqOk(db, schema, domainTable, patCol) {
   if (!tableExists(db, schema, ''ENCOUNTER'')) return { ok: false, reason: ''missing ENCOUNTER table'' };
   if (!colExists(db, schema, ''ENCOUNTER'', ''ENCOUNTERID'') || !colExists(db, schema, ''ENCOUNTER'', ''ENC_TYPE'')) {
@@ -153,7 +168,17 @@ for (const d of domainsToRun) {
 
 if (runnable.length === 0) {
   insertMetric(resultsTbl, bindsBase, (only === ''ALL'' ? ''ALL'' : only), ''ALL'', ''ALL'', ''STATUS'', null, ''ERROR'', thresholdPctLt, true,
-    { message: ''No runnable domains (missing tables/columns in one or both snapshots).'', skipped: skipped, prev_db: PREV_DB_PARAM, prev_schema: PREV_SCHEMA_NAME }
+    {
+      message: ''No runnable domains (missing tables/columns in one or both snapshots).'',
+      current_db: DB_PARAM,
+      current_schema: SCHEMA_NAME,
+      prev_db: PREV_DB_PARAM,
+      prev_schema: PREV_SCHEMA_NAME,
+      target_table: only,
+      encounter_prereq_current: curEncounter,
+      encounter_prereq_prev: prevEncounter,
+      skipped: skipped
+    }
   );
   return `DC 4.02 ERROR: no runnable domains`; 
 }
