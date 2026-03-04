@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE CHARACTERIZATION.DCQ_CHECKS.SP_DC_2_01"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "RUN_ID" VARCHAR, "TARGET_TABLE" VARCHAR)
+CREATE OR REPLACE PROCEDURE CHARACTERIZATION.DCQ_CHECKS.SP_DC_2_01"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "RUN_ID" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR, "START_DATE" VARCHAR, "END_DATE" VARCHAR)
 RETURNS VARCHAR
 LANGUAGE JAVASCRIPT
 EXECUTE AS CALLER
@@ -44,6 +44,14 @@ function insertMetric(resultsTbl, baseBinds, sourceTable, codeType, metric, valu
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+function dateFilter(colName) {
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
 const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const resultsTbl = `${outSchema}.DCQ_RESULTS`;
 const rowNum = 2.01;
@@ -152,11 +160,12 @@ for (const t of selected) {
   for (const c of t.cols) {
     if (!colExists(DB_PARAM, SCHEMA_NAME, t.table, c)) continue;
     const sql = `
-      SELECT
-        COUNT_IF(TRY_TO_DATE(${c}) IS NOT NULL) AS date_populated_n,
-        COUNT_IF(TRY_TO_DATE(${c}) IS NOT NULL AND TRY_TO_DATE(${c}) > TO_DATE(?)) AS future_date_n
-      FROM ${fullTable}
-    `;
+       SELECT
+         COUNT_IF(TRY_TO_DATE(${c}) IS NOT NULL) AS date_populated_n,
+         COUNT_IF(TRY_TO_DATE(${c}) IS NOT NULL AND TRY_TO_DATE(${c}) > TO_DATE(?)) AS future_date_n
+       FROM ${fullTable}
+       WHERE 1=1 ${dateFilter(c)}
+     `;
     const rs = q(sql, [mxrefreshStr]);
     rs.next();
     const denom = Number(rs.getColumnValue(1));

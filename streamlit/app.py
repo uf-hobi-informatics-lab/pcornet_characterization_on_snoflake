@@ -287,7 +287,11 @@ with st.expander("How to run this app"):
            - `PREV_DB_PARAM` + `PREV_SCHEMA_NAME`: optional "previous" location. These are only passed to check
              procedures that accept the additional arguments (the orchestrator detects procedure signatures).
 
-        4. Click Run and review output
+        4. Optional date filter
+           - `START_DATE` + `END_DATE`: if provided, check procedures will restrict their queries to records
+             whose primary date column falls within the given range (inclusive). Leave blank to run on all data.
+
+        5. Click Run and review output
            - The app prints the returned `RUN_ID` string.
            - Expand "DCQ Check Registry" to see the available checks.
         """
@@ -391,6 +395,26 @@ with tab_dcq:
         key="prev_schema",
     )
 
+    st.markdown("---")
+    st.markdown("**Date filter (optional)**")
+    col_start, col_end = st.columns(2)
+    with col_start:
+        start_date = st.date_input(
+            "START_DATE",
+            value=None,
+            help="If set, only include records on or after this date.",
+            key="start_date",
+        )
+    with col_end:
+        end_date = st.date_input(
+            "END_DATE",
+            value=None,
+            help="If set, only include records on or before this date.",
+            key="end_date",
+        )
+    start_date_str: str | None = start_date.isoformat() if start_date else None
+    end_date_str: str | None = end_date.isoformat() if end_date else None
+
     if st.button("Run SP_RUN_DCQ"):
         with st.spinner("Executing SP_RUN_DCQ..."):
             try:
@@ -398,7 +422,7 @@ with tab_dcq:
 
                 if backend == "snowpark":
                     rows = run_query(
-                        "CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(?, ?, ?, ?, ?, ?, ?, ?)",
+                        "CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         [
                             db_param,
                             schema_name,
@@ -408,11 +432,13 @@ with tab_dcq:
                             normalize_optional_param(target_table),
                             normalize_optional_param(prev_db_param),
                             normalize_optional_param(prev_schema_name),
+                            start_date_str,
+                            end_date_str,
                         ],
                     )
                 else:
                     rows = run_query(
-                        "CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(%s,%s,%s,%s,%s,%s,%s,%s)",
+                        "CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
                             db_param,
                             schema_name,
@@ -422,6 +448,8 @@ with tab_dcq:
                             normalize_optional_param(target_table),
                             normalize_optional_param(prev_db_param),
                             normalize_optional_param(prev_schema_name),
+                            start_date_str,
+                            end_date_str,
                         ),
                     )
 

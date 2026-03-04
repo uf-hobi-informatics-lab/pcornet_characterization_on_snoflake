@@ -49,6 +49,16 @@ SNOWFLAKE_DATABASE=CHARACTERIZATION
 SNOWFLAKE_SCHEMA=DCQ_CHECKS   # default schema used by the sync script
 SNOWFLAKE_ROLE=1FL-AZURE-DB-USERS
 ```
+
+The following optional variables configure Streamlit app deployment (used by `push_snowflake_assets.py`):
+```
+STREAMLIT_DATABASE=STREAMLIT          # Database where the Streamlit app lives
+STREAMLIT_SCHEMA=PUBLIC               # Schema for the Streamlit app
+STREAMLIT_NAME=characterization_runner # Name of the Streamlit app object
+STREAMLIT_WAREHOUSE=STREAMLIT_XS      # Warehouse the Streamlit app queries with
+STREAMLIT_STAGE=streamlit_deploy_stage # Internal stage used to upload app.py
+```
+If omitted, the defaults shown above are used.
 These are used by the helper scripts to connect to Snowflake.
 
 ## 📦 Loading the Snowflake Objects
@@ -139,6 +149,7 @@ The app will read the Snowflake registry table (or any other tables you expose) 
 | `fetch_potential_code_errors.py` | Retrieves the `POTENTIAL_CODE_ERRORS` procedure. |
 | `fetch_edc_ref_views.py` | Exports the three EDC_REF views. |
 | `fetch_edc_ref_tables.py` (included in the repo) | Exports each EDC_REF table’s DDL and data as JSON. |
+| `push_snowflake_assets.py` | Pushes all SQL assets (procedures, tables, views) **and** the Streamlit app to Snowflake. |
 | `rebuild_characterization.py` | Rebuilds the entire CHARACTERIZATION database (creates DB, schemas, runs all DDL, loads data, and deploys procedures). |
 
 All scripts rely on the `.env` file for credentials.
@@ -166,6 +177,23 @@ The script performs the following steps automatically:
 6. Deploys all stored procedures from `sql/dcq_checks/procedures/` and the driver procedure `sql/dcq/procedures/sp_run_dcq.sql`.
 
 > **Note:** The script uses the `.env` file for connection details. Ensure that the file contains valid Snowflake credentials and **do not** commit it to version control.
+
+---
+
+## 🚀 Push Local Changes to Snowflake
+
+To deploy local code changes (SQL procedures, tables, views, **and** the Streamlit app) without a full rebuild:
+
+```bash
+python push_snowflake_assets.py
+```
+
+The script performs the following steps:
+1. Executes all `.sql` files under `sql/` (procedures, tables, and views) against the Snowflake instance.
+2. Uploads `streamlit/app.py` to an internal Snowflake stage.
+3. Runs `CREATE OR REPLACE STREAMLIT` to update the Snowflake Streamlit app with the latest code.
+
+This is the recommended way to push incremental changes during development. The Streamlit deployment settings can be customized via the optional `.env` variables described above (`STREAMLIT_DATABASE`, `STREAMLIT_SCHEMA`, etc.).
 
 ---
 

@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE "SP_RUN_DCQ"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "MODE" VARCHAR, "SELECTOR" VARCHAR, "PART" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR)
+CREATE OR REPLACE PROCEDURE "SP_RUN_DCQ"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "MODE" VARCHAR, "SELECTOR" VARCHAR, "PART" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR, "START_DATE" VARCHAR, "END_DATE" VARCHAR)
 RETURNS VARCHAR
 LANGUAGE JAVASCRIPT
 EXECUTE AS CALLER
@@ -71,6 +71,9 @@ const vPrevSchema = normOptIdent(PREV_SCHEMA_NAME);
 if (vPrevDb !== null && !isSafeIdentPart(vPrevDb)) throw new Error(`Unsafe PREV_DB_PARAM: ${PREV_DB_PARAM}`);
 if (vPrevSchema !== null && !isSafeIdentPart(vPrevSchema)) throw new Error(`Unsafe PREV_SCHEMA_NAME: ${PREV_SCHEMA_NAME}`);
 
+const vStartDate = normOptIdent(START_DATE);
+const vEndDate = normOptIdent(END_DATE);
+
 const runId = scalar(''SELECT UUID_STRING()'');
 const vMode = normMode(MODE);
 const vPart = normPart(PART);
@@ -87,12 +90,14 @@ q(`CREATE SCHEMA IF NOT EXISTS ${outSchema}`);
 
 q(`CREATE TABLE IF NOT EXISTS ${runsTbl} (
   RUN_ID STRING, DB_PARAM STRING, SCHEMA_NAME STRING, MODE STRING, SELECTOR STRING, PART STRING, TARGET_TABLE STRING,
-  PREV_DB_PARAM STRING, PREV_SCHEMA_NAME STRING,
+  PREV_DB_PARAM STRING, PREV_SCHEMA_NAME STRING, START_DATE STRING, END_DATE STRING,
   STARTED_AT TIMESTAMP_NTZ, ENDED_AT TIMESTAMP_NTZ, STATUS STRING, ERROR_MESSAGE STRING
 )`);
 q(`ALTER TABLE ${runsTbl} ADD COLUMN IF NOT EXISTS TARGET_TABLE STRING`);
 q(`ALTER TABLE ${runsTbl} ADD COLUMN IF NOT EXISTS PREV_DB_PARAM STRING`);
 q(`ALTER TABLE ${runsTbl} ADD COLUMN IF NOT EXISTS PREV_SCHEMA_NAME STRING`);
+q(`ALTER TABLE ${runsTbl} ADD COLUMN IF NOT EXISTS START_DATE STRING`);
+q(`ALTER TABLE ${runsTbl} ADD COLUMN IF NOT EXISTS END_DATE STRING`);
 q(`CREATE TABLE IF NOT EXISTS ${logTbl} (
   RUN_ID STRING, CHECK_ID STRING, CHECK_NAME STRING, ROW_NUM NUMBER(10,2), PROC_NAME STRING,
   STATUS STRING, STARTED_AT TIMESTAMP_NTZ, ENDED_AT TIMESTAMP_NTZ, ERROR_MESSAGE STRING
@@ -122,9 +127,9 @@ q(`ALTER TABLE ${outSchema}.DCQ_RESULTS ADD COLUMN IF NOT EXISTS CREATED_AT TIME
 
 q(
   `INSERT INTO ${runsTbl}
-   (RUN_ID, DB_PARAM, SCHEMA_NAME, MODE, SELECTOR, PART, TARGET_TABLE, PREV_DB_PARAM, PREV_SCHEMA_NAME, STARTED_AT, STATUS)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), ''RUNNING'')`,
-  [runId, DB_PARAM, SCHEMA_NAME, vMode, SELECTOR, vPart, vTargetTable, vPrevDb, vPrevSchema]
+   (RUN_ID, DB_PARAM, SCHEMA_NAME, MODE, SELECTOR, PART, TARGET_TABLE, PREV_DB_PARAM, PREV_SCHEMA_NAME, START_DATE, END_DATE, STARTED_AT, STATUS)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), ''RUNNING'')`,
+  [runId, DB_PARAM, SCHEMA_NAME, vMode, SELECTOR, vPart, vTargetTable, vPrevDb, vPrevSchema, vStartDate, vEndDate]
 );
 
 // Selector temp table (drop to avoid "already exists" in same session)
@@ -211,6 +216,7 @@ while (rs.next()) {
     const args = [DB_PARAM, SCHEMA_NAME, runId];
     if (maxArgs >= 4) args.push(vTargetTable || ''ALL'');
     if (maxArgs >= 6) args.push(vPrevDb, vPrevSchema);
+    if (maxArgs >= 8) args.push(vStartDate, vEndDate);
     const ph = args.map(() => ''?'').join('', '');
     q(`CALL ${procName}(${ph})`, args);
 
@@ -239,5 +245,5 @@ q(
   [anyFailed ? ''PARTIAL'' : ''SUCCEEDED'', runId]
 );
 
-return `OK RUN_ID=${runId} STATUS=${anyFailed ? ''PARTIAL'' : ''SUCCEEDED''} TARGET_TABLE=${vTargetTable || ''''} PREV_DB_PARAM=${vPrevDb || ''''} PREV_SCHEMA_NAME=${vPrevSchema || ''''}`;
+return `OK RUN_ID=${runId} STATUS=${anyFailed ? ''PARTIAL'' : ''SUCCEEDED''} TARGET_TABLE=${vTargetTable || ''''} PREV_DB_PARAM=${vPrevDb || ''''} PREV_SCHEMA_NAME=${vPrevSchema || ''''} START_DATE=${vStartDate || ''''} END_DATE=${vEndDate || ''''}`;
 ';
