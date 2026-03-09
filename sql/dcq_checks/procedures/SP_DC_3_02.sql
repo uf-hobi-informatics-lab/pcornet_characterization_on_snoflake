@@ -84,6 +84,20 @@ if (!tableExists(DB_PARAM, SCHEMA_NAME, "PROCEDURES") ||
   insertMetric(resultsTbl, base, "ALL", "STATUS", null, "ERROR", null, true, { message: "PROCEDURES missing required columns" });
   return `DC 3.02 ERROR: PROCEDURES missing`;
 }
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  ENCOUNTER: ''ADMIT_DATE'',
+  PROCEDURES: ''PX_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
 const enc = `${DB_PARAM}.${SCHEMA_NAME}.ENCOUNTER`;
 const px = `${DB_PARAM}.${SCHEMA_NAME}.PROCEDURES`;
 // Thresholds by ENC_TYPE
@@ -101,6 +115,7 @@ const rs = q(
     FROM ${enc}
     WHERE ENCOUNTERID IS NOT NULL
       AND ENC_TYPE IN (''AV'',''ED'',''EI'',''IP'',''TH'')
+      ${dateFilterWhere(''ENCOUNTER'')}
   ),
   enc_den AS (
     SELECT ENC_TYPE, COUNT(DISTINCT ENCOUNTERID) AS encounter_distinct_n

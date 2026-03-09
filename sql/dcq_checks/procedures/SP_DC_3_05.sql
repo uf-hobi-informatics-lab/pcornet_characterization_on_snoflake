@@ -82,6 +82,20 @@ if (!tableExists(DB_PARAM, SCHEMA_NAME, "PROCEDURES") || !colExists(DB_PARAM, SC
   insertMetric(resultsTbl, base, "STATUS", null, "ERROR", thresholdPct, true, { message: "PROCEDURES or PROCEDURES.PATID missing" });
   return `DC 3.05 ERROR: PROCEDURES missing`;
 }
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  ENCOUNTER: ''ADMIT_DATE'',
+  PROCEDURES: ''PX_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
 const enc = `${DB_PARAM}.${SCHEMA_NAME}.ENCOUNTER`;
 const pro = `${DB_PARAM}.${SCHEMA_NAME}.PROCEDURES`;
 const rs = q(
@@ -90,11 +104,13 @@ const rs = q(
     SELECT DISTINCT PATID
     FROM ${enc}
     WHERE PATID IS NOT NULL
+      ${dateFilterWhere(''ENCOUNTER'')}
   ),
   p AS (
     SELECT DISTINCT PATID
     FROM ${pro}
     WHERE PATID IS NOT NULL
+      ${dateFilterWhere(''PROCEDURES'')}
   )
   SELECT
     (SELECT COUNT(*) FROM e) AS encounter_patid_distinct_n,

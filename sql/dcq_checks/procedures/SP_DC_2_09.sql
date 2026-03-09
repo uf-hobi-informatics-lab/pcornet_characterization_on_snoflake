@@ -60,10 +60,38 @@ if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA
 
 const vStartDate = (START_DATE || '''').toString().trim() || null;
 const vEndDate = (END_DATE || '''').toString().trim() || null;
-function dateFilter(colName) {
+const tableDateCol = {
+  CONDITION: ''REPORT_DATE'',
+  DEATH: ''DEATH_DATE'',
+  DEMOGRAPHIC: null,
+  DIAGNOSIS: ''DX_DATE'',
+  DISPENSING: ''DISPENSE_DATE'',
+  ENCOUNTER: ''ADMIT_DATE'',
+  ENROLLMENT: ''ENR_START_DATE'',
+  EXTERNAL_MEDS: ''EXT_RECORD_DATE'',
+  HARVEST: null,
+  HASH_TOKEN: null,
+  IMMUNIZATION: ''VX_RECORD_DATE'',
+  LAB_HISTORY: null,
+  LAB_RESULT_CM: ''RESULT_DATE'',
+  LDS_ADDRESS_HISTORY: null,
+  MED_ADMIN: ''MEDADMIN_START_DATE'',
+  OBS_CLIN: ''OBSCLIN_START_DATE'',
+  OBS_GEN: ''OBSGEN_START_DATE'',
+  PAT_RELATIONSHIP: null,
+  PCORNET_TRIAL: null,
+  PRESCRIBING: ''RX_ORDER_DATE'',
+  PROCEDURES: ''PX_DATE'',
+  PROVIDER: null,
+  PRO_CM: ''PRO_DATE'',
+  VITAL: ''MEASURE_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
@@ -159,9 +187,9 @@ const pro = `${DB_PARAM}.${SCHEMA_NAME}.PROCEDURES`;
 
 const medUnionSql = (hasPrescribing || hasMedAdmin)
   ? `med AS (
-       ${hasPrescribing ? `SELECT DISTINCT PATID FROM ${pres} p JOIN anchor a ON 1=1 WHERE p.PATID IS NOT NULL AND TRIM(p.PATID::STRING) <> '''' AND TRY_TO_DATE(p.RX_ORDER_DATE) BETWEEN a.start_5yr AND a.anchor_date` : `SELECT NULL AS PATID WHERE 1=0`}
+       ${hasPrescribing ? `SELECT DISTINCT PATID FROM ${pres} p JOIN anchor a ON 1=1 WHERE p.PATID IS NOT NULL AND TRIM(p.PATID::STRING) <> '''' AND TRY_TO_DATE(p.RX_ORDER_DATE) BETWEEN a.start_5yr AND a.anchor_date${dateFilterWhere(''PRESCRIBING'')}` : `SELECT NULL AS PATID WHERE 1=0`}
        UNION
-       ${hasMedAdmin ? `SELECT DISTINCT PATID FROM ${meda} m JOIN anchor a ON 1=1 WHERE m.PATID IS NOT NULL AND TRIM(m.PATID::STRING) <> '''' AND TRY_TO_DATE(m.MEDADMIN_START_DATE) BETWEEN a.start_5yr AND a.anchor_date` : `SELECT NULL AS PATID WHERE 1=0`}
+       ${hasMedAdmin ? `SELECT DISTINCT PATID FROM ${meda} m JOIN anchor a ON 1=1 WHERE m.PATID IS NOT NULL AND TRIM(m.PATID::STRING) <> '''' AND TRY_TO_DATE(m.MEDADMIN_START_DATE) BETWEEN a.start_5yr AND a.anchor_date${dateFilterWhere(''MED_ADMIN'')}` : `SELECT NULL AS PATID WHERE 1=0`}
      )`
   : `med AS (SELECT NULL AS PATID WHERE 1=0)`;
 
@@ -172,7 +200,7 @@ const labSql = hasLab
        JOIN anchor a ON 1=1
        WHERE l.PATID IS NOT NULL
          AND TRIM(l.PATID::STRING) <> ''''
-         AND TRY_TO_DATE(l.RESULT_DATE) BETWEEN a.start_5yr AND a.anchor_date
+         AND TRY_TO_DATE(l.RESULT_DATE) BETWEEN a.start_5yr AND a.anchor_date${dateFilterWhere(''LAB_RESULT_CM'')}
      )`
   : `lab AS (SELECT NULL AS PATID WHERE 1=0)`;
 
@@ -180,7 +208,7 @@ const procAnySql = hasProc
   ? `proc_any AS (
        SELECT DISTINCT PATID
        FROM ${pro}
-       WHERE PATID IS NOT NULL AND TRIM(PATID::STRING) <> ''''
+       WHERE PATID IS NOT NULL AND TRIM(PATID::STRING) <> ''''${dateFilterWhere(''PROCEDURES'')}
      )`
   : `proc_any AS (SELECT NULL AS PATID WHERE 1=0)`;
 
@@ -202,7 +230,7 @@ const rs = q(
      WHERE e.PATID IS NOT NULL
        AND TRIM(e.PATID::STRING) <> ''''
        AND TRY_TO_DATE(e.ADMIT_DATE) BETWEEN a.start_5yr AND a.anchor_date
-       AND UPPER(e.ENC_TYPE::STRING) IN (''ED'',''EI'',''IP'',''OS'',''AV'')
+       AND UPPER(e.ENC_TYPE::STRING) IN (''ED'',''EI'',''IP'',''OS'',''AV'')${dateFilterWhere(''ENCOUNTER'')}
    ),
    enc_1yr AS (
      SELECT DISTINCT e.PATID
@@ -211,12 +239,12 @@ const rs = q(
      WHERE e.PATID IS NOT NULL
        AND TRIM(e.PATID::STRING) <> ''''
        AND TRY_TO_DATE(e.ADMIT_DATE) BETWEEN a.start_1yr AND a.anchor_date
-       AND UPPER(e.ENC_TYPE::STRING) IN (''ED'',''EI'',''IP'',''OS'',''AV'')
+       AND UPPER(e.ENC_TYPE::STRING) IN (''ED'',''EI'',''IP'',''OS'',''AV'')${dateFilterWhere(''ENCOUNTER'')}
    ),
    enc_any AS (
      SELECT DISTINCT PATID
      FROM ${enc}
-     WHERE PATID IS NOT NULL AND TRIM(PATID::STRING) <> ''''
+     WHERE PATID IS NOT NULL AND TRIM(PATID::STRING) <> ''''${dateFilterWhere(''ENCOUNTER'')}
    ),
    dx_5yr_ftf AS (
      SELECT DISTINCT d.PATID
@@ -225,12 +253,12 @@ const rs = q(
      WHERE d.PATID IS NOT NULL
        AND TRIM(d.PATID::STRING) <> ''''
        AND TRY_TO_DATE(d.DX_DATE) BETWEEN a.start_5yr AND a.anchor_date
-       AND UPPER(d.ENC_TYPE::STRING) IN (''ED'',''EI'',''IP'',''OS'',''AV'')
+       AND UPPER(d.ENC_TYPE::STRING) IN (''ED'',''EI'',''IP'',''OS'',''AV'')${dateFilterWhere(''DIAGNOSIS'')}
    ),
    dx_any AS (
      SELECT DISTINCT PATID
      FROM ${dia}
-     WHERE PATID IS NOT NULL AND TRIM(PATID::STRING) <> ''''
+     WHERE PATID IS NOT NULL AND TRIM(PATID::STRING) <> ''''${dateFilterWhere(''DIAGNOSIS'')}
    ),
    vital_5yr AS (
      SELECT DISTINCT v.PATID
@@ -238,7 +266,7 @@ const rs = q(
      JOIN anchor a ON 1=1
      WHERE v.PATID IS NOT NULL
        AND TRIM(v.PATID::STRING) <> ''''
-       AND TRY_TO_DATE(v.MEASURE_DATE) BETWEEN a.start_5yr AND a.anchor_date
+       AND TRY_TO_DATE(v.MEASURE_DATE) BETWEEN a.start_5yr AND a.anchor_date${dateFilterWhere(''VITAL'')}
    ),
    ${medUnionSql},
    ${labSql},

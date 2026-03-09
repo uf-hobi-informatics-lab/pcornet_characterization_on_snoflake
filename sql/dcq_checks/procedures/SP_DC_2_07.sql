@@ -56,10 +56,38 @@ if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
 const vStartDate = (START_DATE || '''').toString().trim() || null;
 const vEndDate = (END_DATE || '''').toString().trim() || null;
-function dateFilter(colName) {
+const tableDateCol = {
+  CONDITION: ''REPORT_DATE'',
+  DEATH: ''DEATH_DATE'',
+  DEMOGRAPHIC: null,
+  DIAGNOSIS: ''DX_DATE'',
+  DISPENSING: ''DISPENSE_DATE'',
+  ENCOUNTER: ''ADMIT_DATE'',
+  ENROLLMENT: ''ENR_START_DATE'',
+  EXTERNAL_MEDS: ''EXT_RECORD_DATE'',
+  HARVEST: null,
+  HASH_TOKEN: null,
+  IMMUNIZATION: ''VX_RECORD_DATE'',
+  LAB_HISTORY: null,
+  LAB_RESULT_CM: ''RESULT_DATE'',
+  LDS_ADDRESS_HISTORY: null,
+  MED_ADMIN: ''MEDADMIN_START_DATE'',
+  OBS_CLIN: ''OBSCLIN_START_DATE'',
+  OBS_GEN: ''OBSGEN_START_DATE'',
+  PAT_RELATIONSHIP: null,
+  PCORNET_TRIAL: null,
+  PRESCRIBING: ''RX_ORDER_DATE'',
+  PROCEDURES: ''PX_DATE'',
+  PROVIDER: null,
+  PRO_CM: ''PRO_DATE'',
+  VITAL: ''MEASURE_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
@@ -123,7 +151,7 @@ const rs = q(
      SELECT ENCOUNTERID, ENC_TYPE
      FROM ${enc}
      WHERE ENCOUNTERID IS NOT NULL
-       AND ENC_TYPE IN (''IP'',''EI'')
+       AND ENC_TYPE IN (''IP'',''EI'')${dateFilterWhere(''ENCOUNTER'')}
    ),
    diag_known AS (
      SELECT
@@ -136,7 +164,7 @@ const rs = q(
      WHERE d.ENCOUNTERID IS NOT NULL
        AND d.DX_ORIGIN IS NOT NULL
        AND TRIM(d.DX_ORIGIN) <> ''''
-       AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')
+       AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')${dateFilterWhere(''DIAGNOSIS'')}
    ),
    per_enc_origin AS (
      SELECT
@@ -196,7 +224,7 @@ const encCtRs = q(
   `SELECT COUNT(*)
    FROM ${enc}
    WHERE ENCOUNTERID IS NOT NULL
-     AND ENC_TYPE IN (''IP'',''EI'')`
+     AND ENC_TYPE IN (''IP'',''EI'')${dateFilterWhere(''ENCOUNTER'')}`
 );
 encCtRs.next();
 anyEnc = Number(encCtRs.getColumnValue(1)) > 0;
@@ -210,7 +238,7 @@ const diagCtRs = q(
      AND d.ENCOUNTERID IS NOT NULL
      AND d.DX_ORIGIN IS NOT NULL
      AND TRIM(d.DX_ORIGIN) <> ''''
-     AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')`
+     AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')${dateFilterWhere(''ENCOUNTER'')}${dateFilterWhere(''DIAGNOSIS'')}`
 );
 diagCtRs.next();
 anyDiag = Number(diagCtRs.getColumnValue(1)) > 0;

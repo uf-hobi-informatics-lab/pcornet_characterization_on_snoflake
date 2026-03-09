@@ -90,6 +90,20 @@ function insertMetric(resultsTbl, bindsBase, edcTableVal, sourceTableVal, codeTy
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
 
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  LAB_RESULT_CM: ''RESULT_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
+
 const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const resultsTbl = `${outSchema}.DCQ_RESULTS`;
 const rowNum = 3.12;
@@ -165,6 +179,7 @@ const rs = q(
      FROM ${labFq}
      WHERE LAB_LOINC IS NOT NULL
        AND TRIM(LAB_LOINC::STRING) <> ''''
+       ${dateFilterWhere(''LAB_RESULT_CM'')}
    ),
    quant AS (
      SELECT

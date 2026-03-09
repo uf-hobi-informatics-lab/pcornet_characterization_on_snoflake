@@ -59,10 +59,38 @@ if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
 const vStartDate = (START_DATE || '''').toString().trim() || null;
 const vEndDate = (END_DATE || '''').toString().trim() || null;
-function dateFilter(colName) {
+const tableDateCol = {
+  CONDITION: ''REPORT_DATE'',
+  DEATH: ''DEATH_DATE'',
+  DEMOGRAPHIC: null,
+  DIAGNOSIS: ''DX_DATE'',
+  DISPENSING: ''DISPENSE_DATE'',
+  ENCOUNTER: ''ADMIT_DATE'',
+  ENROLLMENT: ''ENR_START_DATE'',
+  EXTERNAL_MEDS: ''EXT_RECORD_DATE'',
+  HARVEST: null,
+  HASH_TOKEN: null,
+  IMMUNIZATION: ''VX_RECORD_DATE'',
+  LAB_HISTORY: null,
+  LAB_RESULT_CM: ''RESULT_DATE'',
+  LDS_ADDRESS_HISTORY: null,
+  MED_ADMIN: ''MEDADMIN_START_DATE'',
+  OBS_CLIN: ''OBSCLIN_START_DATE'',
+  OBS_GEN: ''OBSGEN_START_DATE'',
+  PAT_RELATIONSHIP: null,
+  PCORNET_TRIAL: null,
+  PRESCRIBING: ''RX_ORDER_DATE'',
+  PROCEDURES: ''PX_DATE'',
+  PROVIDER: null,
+  PRO_CM: ''PRO_DATE'',
+  VITAL: ''MEASURE_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
@@ -155,7 +183,7 @@ for (const d of defs) {
       `SELECT ''${t}'' AS TABLE_NAME,
               ${p5DateExpr(d.dateCol)} AS P5_DATE
        FROM ${fq}
-       WHERE ${d.dateCol} IS NOT NULL`
+       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}`
     );
 
     seriesParts.push(
@@ -166,7 +194,7 @@ for (const d of defs) {
        FROM ${fq}
        WHERE ${d.dateCol} IS NOT NULL
          AND ${d.catCol} IS NOT NULL
-         AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')
+         AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhere(t)}
        GROUP BY 1,2,3`
     );
     includedTables.push(t);
@@ -181,7 +209,7 @@ for (const d of defs) {
         `SELECT ''${t}'' AS TABLE_NAME,
                 ${p5DateExpr(d.dateCol)} AS P5_DATE
          FROM ${fq}
-         WHERE ${d.dateCol} IS NOT NULL`
+         WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}`
       );
       seriesParts.push(
         `SELECT ''${t}'' AS TABLE_NAME,
@@ -191,7 +219,7 @@ for (const d of defs) {
          FROM ${fq}
          WHERE ${d.dateCol} IS NOT NULL
            AND ${d.catCol} IS NOT NULL
-           AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')
+           AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhere(t)}
          GROUP BY 1,2,3`
       );
       includedTables.push(t);
@@ -203,7 +231,7 @@ for (const d of defs) {
          FROM ${fq} x
          JOIN ${encFq} e
            ON x.ENCOUNTERID = e.ENCOUNTERID
-         WHERE e.ADMIT_DATE IS NOT NULL`
+         WHERE e.ADMIT_DATE IS NOT NULL${dateFilterWhere(''ENCOUNTER'')}`
       );
       seriesParts.push(
         `SELECT ''${t}'' AS TABLE_NAME,
@@ -215,7 +243,7 @@ for (const d of defs) {
            ON x.ENCOUNTERID = e.ENCOUNTERID
          WHERE e.ADMIT_DATE IS NOT NULL
            AND e.ENC_TYPE IS NOT NULL
-           AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')
+           AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhere(''ENCOUNTER'')}
          GROUP BY 1,2,3`
       );
       includedTables.push(t);
@@ -226,7 +254,7 @@ for (const d of defs) {
       `SELECT ''${t}'' AS TABLE_NAME,
               ${p5DateExpr(d.dateCol)} AS P5_DATE
        FROM ${fq}
-       WHERE ${d.dateCol} IS NOT NULL`
+       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}`
     );
     seriesParts.push(
       `SELECT ''${t}'' AS TABLE_NAME,
@@ -234,7 +262,7 @@ for (const d of defs) {
               DATE_TRUNC(''MONTH'', ${d.dateCol})::DATE AS MONTH,
               COUNT(*)::NUMBER AS RESULTN
        FROM ${fq}
-       WHERE ${d.dateCol} IS NOT NULL
+       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}
        GROUP BY 1,2,3`
     );
     includedTables.push(t);

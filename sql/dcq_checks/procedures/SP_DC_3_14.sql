@@ -61,10 +61,17 @@ if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA
 
 const vStartDate = (START_DATE || '''').toString().trim() || null;
 const vEndDate = (END_DATE || '''').toString().trim() || null;
-function dateFilter(colName) {
+const tableDateCol = {
+  MED_ADMIN: ''MEDADMIN_START_DATE'',
+  DISPENSING: ''DISPENSE_DATE'',
+  OBS_CLIN: ''OBSCLIN_START_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
@@ -128,6 +135,7 @@ for (const d of defs) {
   const sSql = `SELECT DATE_TRUNC(''MONTH'', ${d.dateCol})::DATE AS month, COUNT(*)::NUMBER AS n
                 FROM ${fq}
                 WHERE ${d.dateCol} IS NOT NULL
+                  ${dateFilterWhere(d.table)}
                 GROUP BY 1`;
 
   const rs = q(

@@ -61,10 +61,17 @@ if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA
 
 const vStartDate = (START_DATE || '''').toString().trim() || null;
 const vEndDate = (END_DATE || '''').toString().trim() || null;
-function dateFilter(colName) {
+const tableDateCol = {
+  ENCOUNTER: ''ADMIT_DATE'',
+  DIAGNOSIS: ''DX_DATE'',
+  PROCEDURES: ''PX_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
@@ -135,6 +142,7 @@ function seriesSql(seriesName) {
             WHERE e.ADMIT_DATE IS NOT NULL
               AND e.ENC_TYPE IS NOT NULL
               AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN ${encTypes}
+              ${dateFilterWhere(''ENCOUNTER'')}
             GROUP BY 1`;
   }
   if (seriesName === ''DIAGNOSIS'') {
@@ -145,6 +153,7 @@ function seriesSql(seriesName) {
               WHERE d.ADMIT_DATE IS NOT NULL
                 AND d.ENC_TYPE IS NOT NULL
                 AND UPPER(TRIM(d.ENC_TYPE::STRING)) IN ${encTypes}
+                ${dateFilterWhere(''DIAGNOSIS'')}
               GROUP BY 1`;
     }
     return `SELECT DATE_TRUNC(''MONTH'', e.ADMIT_DATE)::DATE AS month, COUNT(*)::NUMBER AS n
@@ -154,6 +163,7 @@ function seriesSql(seriesName) {
             WHERE e.ADMIT_DATE IS NOT NULL
               AND e.ENC_TYPE IS NOT NULL
               AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN ${encTypes}
+              ${dateFilterWhere(''DIAGNOSIS'')}
             GROUP BY 1`;
   }
   if (seriesName === ''PROCEDURES'') {
@@ -164,6 +174,7 @@ function seriesSql(seriesName) {
               WHERE p.ADMIT_DATE IS NOT NULL
                 AND p.ENC_TYPE IS NOT NULL
                 AND UPPER(TRIM(p.ENC_TYPE::STRING)) IN ${encTypes}
+                ${dateFilterWhere(''PROCEDURES'')}
               GROUP BY 1`;
     }
     return `SELECT DATE_TRUNC(''MONTH'', e.ADMIT_DATE)::DATE AS month, COUNT(*)::NUMBER AS n
@@ -173,6 +184,7 @@ function seriesSql(seriesName) {
             WHERE e.ADMIT_DATE IS NOT NULL
               AND e.ENC_TYPE IS NOT NULL
               AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN ${encTypes}
+              ${dateFilterWhere(''PROCEDURES'')}
             GROUP BY 1`;
   }
   return null;

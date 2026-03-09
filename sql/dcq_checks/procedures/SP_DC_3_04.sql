@@ -82,6 +82,20 @@ if (!tableExists(DB_PARAM, SCHEMA_NAME, "DIAGNOSIS") || !colExists(DB_PARAM, SCH
   insertMetric(resultsTbl, base, "STATUS", null, "ERROR", thresholdPct, true, { message: "DIAGNOSIS or DIAGNOSIS.PATID missing" });
   return `DC 3.04 ERROR: DIAGNOSIS missing`;
 }
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  ENCOUNTER: ''ADMIT_DATE'',
+  DIAGNOSIS: ''DX_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
 const enc = `${DB_PARAM}.${SCHEMA_NAME}.ENCOUNTER`;
 const dia = `${DB_PARAM}.${SCHEMA_NAME}.DIAGNOSIS`;
 const rs = q(
@@ -90,11 +104,13 @@ const rs = q(
     SELECT DISTINCT PATID
     FROM ${enc}
     WHERE PATID IS NOT NULL
+      ${dateFilterWhere(''ENCOUNTER'')}
   ),
   d AS (
     SELECT DISTINCT PATID
     FROM ${dia}
     WHERE PATID IS NOT NULL
+      ${dateFilterWhere(''DIAGNOSIS'')}
   )
   SELECT
     (SELECT COUNT(*) FROM e) AS encounter_patid_distinct_n,

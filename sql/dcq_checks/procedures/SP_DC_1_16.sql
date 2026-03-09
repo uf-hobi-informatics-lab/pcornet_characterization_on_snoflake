@@ -40,6 +40,22 @@ function insertStatus(resultsTbl, runId, checkId, checkName, rowNum, edcTable, s
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  LAB_RESULT_CM: ''RESULT_DATE'',
+  LAB_HISTORY: null,
+  OBS_CLIN: ''OBSCLIN_START_DATE'',
+  OBS_GEN: ''OBSGEN_START_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
 const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const resultsTbl = `${outSchema}.DCQ_RESULTS`;
 const rowNum = 1.16;
@@ -76,7 +92,7 @@ function insertFor(tableName, idCol, loincCol, expectedLabel, mismatchPredicateS
       SELECT ${idCol} AS record_id,
              UPPER(REGEXP_REPLACE(${loincCol}, ''[.,\\\\\\\\s]'', '''')) AS code_clean
       FROM ${fullTable}
-      WHERE ${loincCol} IS NOT NULL
+      WHERE ${loincCol} IS NOT NULL ${dateFilterWhere(tableName)}
     ),
     joined AS (
       SELECT b.record_id, b.code_clean,

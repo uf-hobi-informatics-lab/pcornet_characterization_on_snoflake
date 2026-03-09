@@ -59,6 +59,42 @@ function insertMetric(resultsTbl, bindsBase, edcTableVal, sourceTableVal, codeTy
 
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  CONDITION: ''REPORT_DATE'',
+  DEATH: ''DEATH_DATE'',
+  DEMOGRAPHIC: null,
+  DIAGNOSIS: ''DX_DATE'',
+  DISPENSING: ''DISPENSE_DATE'',
+  ENCOUNTER: ''ADMIT_DATE'',
+  ENROLLMENT: ''ENR_START_DATE'',
+  EXTERNAL_MEDS: ''EXT_RECORD_DATE'',
+  HARVEST: null,
+  HASH_TOKEN: null,
+  IMMUNIZATION: ''VX_RECORD_DATE'',
+  LAB_HISTORY: null,
+  LAB_RESULT_CM: ''RESULT_DATE'',
+  LDS_ADDRESS_HISTORY: null,
+  MED_ADMIN: ''MEDADMIN_START_DATE'',
+  OBS_CLIN: ''OBSCLIN_START_DATE'',
+  OBS_GEN: ''OBSGEN_START_DATE'',
+  PAT_RELATIONSHIP: null,
+  PCORNET_TRIAL: null,
+  PRESCRIBING: ''RX_ORDER_DATE'',
+  PROCEDURES: ''PX_DATE'',
+  PROVIDER: null,
+  PRO_CM: ''PRO_DATE'',
+  VITAL: ''MEASURE_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
 
 const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const resultsTbl = `${outSchema}.DCQ_RESULTS`;
@@ -168,7 +204,8 @@ while (reqRs.next()) {
     `SELECT
        COUNT(*) AS denom_n,
        COUNT_IF(${missingPred}) AS missing_n
-     FROM ${fq}`
+     FROM ${fq}
+     WHERE 1=1 ${dateFilterWhere(tbl)}`
   );
   rs.next();
   const denom = Number(rs.getColumnValue(1));

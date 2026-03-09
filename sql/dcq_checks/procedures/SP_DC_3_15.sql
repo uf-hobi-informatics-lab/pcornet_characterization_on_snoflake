@@ -58,6 +58,20 @@ function insertMetric(resultsTbl, bindsBase, edcTableVal, sourceTableVal, codeTy
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
 
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  MED_ADMIN: ''MEDADMIN_START_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
+
 const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const resultsTbl = `${outSchema}.DCQ_RESULTS`;
 const rowNum = 3.15;
@@ -126,7 +140,7 @@ const tier4Ttys = "(''DF'',''DFG'')";
 // Compute tier distribution for MED_ADMIN.
 // Only rows with MEDADMIN_TYPE=''RX'' contribute a RXCUI (from MEDADMIN_CODE); all other rows are treated as unmapped (Tier 5).
 const rs = q(
-  `WITH base AS (
+   `WITH base AS (
      SELECT
        UPPER(TRIM(MEDADMIN_TYPE::STRING)) AS medadmin_type,
        CASE
@@ -134,6 +148,7 @@ const rs = q(
          ELSE NULL
        END AS rxnorm_cui
      FROM ${med}
+     WHERE 1=1 ${dateFilterWhere(''MED_ADMIN'')}
    ),
    mapped AS (
      SELECT

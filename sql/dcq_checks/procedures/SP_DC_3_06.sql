@@ -87,6 +87,20 @@ if (!tableExists(DB_PARAM, SCHEMA_NAME, "DIAGNOSIS") ||
   insertMetric(resultsTbl, base, "ALL", "STATUS", null, "ERROR", thresholdPct, true, { message: "DIAGNOSIS missing required columns" });
   return `DC 3.06 ERROR: DIAGNOSIS missing`;
 }
+const vStartDate = (START_DATE || '''').toString().trim() || null;
+const vEndDate = (END_DATE || '''').toString().trim() || null;
+const tableDateCol = {
+  ENCOUNTER: ''ADMIT_DATE'',
+  DIAGNOSIS: ''DX_DATE''
+};
+function dateFilterWhere(tbl) {
+  const dc = tableDateCol[tbl] || null;
+  if (!dc) return '''';
+  let clause = '''';
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  return clause;
+}
 const enc = `${DB_PARAM}.${SCHEMA_NAME}.ENCOUNTER`;
 const dia = `${DB_PARAM}.${SCHEMA_NAME}.DIAGNOSIS`;
 const rs = q(
@@ -96,6 +110,7 @@ const rs = q(
     FROM ${enc}
     WHERE ENCOUNTERID IS NOT NULL
       AND ENC_TYPE IN (''IP'',''EI'')
+      ${dateFilterWhere(''ENCOUNTER'')}
   ),
   diag_known AS (
     SELECT
