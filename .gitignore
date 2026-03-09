@@ -9,4 +9,5 @@ __pycache__/
 *.pdf
 *.zip
 # Snowflake JSON data (optional – keep if you want versioned)
-*.json
+# *.json
+!snowflake/**/*.json
