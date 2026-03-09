@@ -1,8 +1,11 @@
-CREATE OR REPLACE PROCEDURE CHARACTERIZATION.DCQ."SP_RUN_DCQ"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "MODE" VARCHAR, "SELECTOR" VARCHAR, "PART" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR, "START_DATE" VARCHAR, "END_DATE" VARCHAR)
+CREATE OR REPLACE PROCEDURE CHARACTERIZATION.DCQ."SP_RUN_DCQ"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "MODE" VARCHAR, "SELECTOR" VARCHAR, "PART" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR, "START_DATE" VARCHAR, "END_DATE" VARCHAR, "MAX_PARALLEL" VARCHAR)
 RETURNS VARCHAR
 LANGUAGE JAVASCRIPT
 EXECUTE AS CALLER
 AS '
+// ---------------------------------------------------------------------------
+// Utility helpers
+// ---------------------------------------------------------------------------
 function q(sqlText, binds) {
   return snowflake.execute({ sqlText: sqlText, binds: binds || [] });
 }
@@ -41,6 +44,12 @@ function parseProc(procName) {
   if (parts.length === 2) return { db: scalar(''SELECT CURRENT_DATABASE()''), schema: parts[0], name: parts[1] };
   return { db: scalar(''SELECT CURRENT_DATABASE()''), schema: scalar(''SELECT CURRENT_SCHEMA()''), name: parts[0] };
 }
+function sqlLit(v) {
+  if (v === null || v === undefined) return "NULL";
+  // Produces a SQL string literal wrapped in single quotes.
+  // Inside this procedure source, '' = runtime single quote character.
+  return "''" + v.toString().replace(/''/g, "''''") + "''"
+}
 
 const procArgCache = {};
 function getProcMaxArgs(procName) {
@@ -63,6 +72,9 @@ function getProcMaxArgs(procName) {
   return maxArgs;
 }
 
+// ---------------------------------------------------------------------------
+// Validate inputs
+// ---------------------------------------------------------------------------
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
 
@@ -74,19 +86,23 @@ if (vPrevSchema !== null && !isSafeIdentPart(vPrevSchema)) throw new Error(`Unsa
 const vStartDate = normOptIdent(START_DATE);
 const vEndDate = normOptIdent(END_DATE);
 
+const maxPar = Math.max(1, parseInt(MAX_PARALLEL) || 8);
+
 const runId = scalar(''SELECT UUID_STRING()'');
 const vMode = normMode(MODE);
 const vPart = normPart(PART);
 const vTargetTable = normTargetTable(TARGET_TABLE);
 const sel = parseSelector(SELECTOR);
+const currentWh = scalar(''SELECT CURRENT_WAREHOUSE()'');
 
 const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const runsTbl = `${outSchema}.DCQ_RUNS`;
 const logTbl = `${outSchema}.DCQ_CHECK_LOG`;
 
+// ---------------------------------------------------------------------------
+// Create output tables
+// ---------------------------------------------------------------------------
 q(`CREATE SCHEMA IF NOT EXISTS ${outSchema}`);
-
-
 
 q(`CREATE TABLE IF NOT EXISTS ${runsTbl} (
   RUN_ID STRING, DB_PARAM STRING, SCHEMA_NAME STRING, MODE STRING, SELECTOR STRING, PART STRING, TARGET_TABLE STRING,
@@ -132,9 +148,9 @@ q(
   [runId, DB_PARAM, SCHEMA_NAME, vMode, SELECTOR, vPart, vTargetTable, vPrevDb, vPrevSchema, vStartDate, vEndDate]
 );
 
-// Selector temp table (drop to avoid "already exists" in same session)
-
-
+// ---------------------------------------------------------------------------
+// Build list of checks to run
+// ---------------------------------------------------------------------------
 let numCol = "ROW_NUM";
 try {
   q("SELECT CHECK_NUM FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY LIMIT 1");
@@ -176,74 +192,167 @@ if (vMode === "CHECK_NAME") {
 }
 checksSql += ` ORDER BY ${numCol}, CHECK_NAME`;
 const rs = q(checksSql, binds);
-let anyFailed = false;
 
+// Collect all checks into an array
+const checks = [];
 while (rs.next()) {
-  const checkId = rs.getColumnValue(1);
-  const checkName = rs.getColumnValue(2);
-  const rowNum = rs.getColumnValue(3);
-  const procName = rs.getColumnValue(5);
+  checks.push({
+    checkId:   rs.getColumnValue(1),
+    checkName: rs.getColumnValue(2),
+    rowNum:    rs.getColumnValue(3),
+    procName:  rs.getColumnValue(5)
+  });
+}
 
-  q(
-    `INSERT INTO ${logTbl}
-     (RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, STARTED_AT, ERROR_MESSAGE)
-     VALUES (?, ?, ?, ?, ?, ''RUNNING'', CURRENT_TIMESTAMP(), NULL)`,
-    [runId, checkId, checkName, rowNum, procName]
-  );
+// ---------------------------------------------------------------------------
+// Pre-validate checks and build task SQL for each
+// ---------------------------------------------------------------------------
+const taskPrefix = `DCQ_${runId.replace(/-/g, "").substring(0, 12)}`;
+const taskChecks = [];   // checks that will get a task
+const taskNames  = [];   // FQN of every task we create (for cleanup)
 
+for (let i = 0; i < checks.length; i++) {
+  const c = checks[i];
+  const checkId = c.checkId;
+  const checkName = c.checkName;
+  const rowNum = c.rowNum;
+  const procName = c.procName;
+
+  // Skip checks with no/invalid proc name — log immediately
   if (!procName || procName.toString().trim() === '''') {
     q(
-      `UPDATE ${logTbl}
-       SET STATUS=''SKIPPED'', ENDED_AT=CURRENT_TIMESTAMP(), ERROR_MESSAGE=''PROC_NAME is NULL/empty''
-       WHERE RUN_ID=? AND CHECK_ID=? AND STATUS=''RUNNING''`,
-      [runId, checkId]
+      `INSERT INTO ${logTbl}
+       (RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, STARTED_AT, ENDED_AT, ERROR_MESSAGE)
+       VALUES (?, ?, ?, ?, ?, ''SKIPPED'', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), ''PROC_NAME is NULL/empty'')`,
+      [runId, checkId, checkName, rowNum, procName]
     );
     continue;
   }
   if (!isSafeProcName(procName.toString().trim())) {
-    anyFailed = true;
     q(
-      `UPDATE ${logTbl}
-       SET STATUS=''FAILED'', ENDED_AT=CURRENT_TIMESTAMP(), ERROR_MESSAGE=?
-       WHERE RUN_ID=? AND CHECK_ID=? AND STATUS=''RUNNING''`,
-      [`Unsafe PROC_NAME: ${procName}`, runId, checkId]
+      `INSERT INTO ${logTbl}
+       (RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, STARTED_AT, ENDED_AT, ERROR_MESSAGE)
+       VALUES (?, ?, ?, ?, ?, ''FAILED'', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), ?)`,
+      [runId, checkId, checkName, rowNum, procName, `Unsafe PROC_NAME: ${procName}`]
     );
     continue;
   }
 
-  try {
-    const maxArgs = getProcMaxArgs(procName.toString().trim());
-    const args = [DB_PARAM, SCHEMA_NAME, runId];
-    if (maxArgs >= 4) args.push(vTargetTable || ''ALL'');
-    if (maxArgs >= 6) args.push(vPrevDb, vPrevSchema);
-    if (maxArgs >= 8) args.push(vStartDate, vEndDate);
-    const ph = args.map(() => ''?'').join('', '');
-    q(`CALL ${procName}(${ph})`, args);
+  // Determine the CALL statement based on procedure arity
+  const maxArgs = getProcMaxArgs(procName.toString().trim());
+  const argVals = [DB_PARAM, SCHEMA_NAME, runId];
+  if (maxArgs >= 4) argVals.push(vTargetTable || ''ALL'');
+  if (maxArgs >= 6) argVals.push(vPrevDb, vPrevSchema);
+  if (maxArgs >= 8) argVals.push(vStartDate, vEndDate);
+  const callLiterals = argVals.map(v => sqlLit(v)).join(", ");
+  const callSql = `CALL ${procName.toString().trim()}(${callLiterals})`;
 
-    q(
-      `UPDATE ${logTbl}
-       SET STATUS=''SUCCEEDED'', ENDED_AT=CURRENT_TIMESTAMP()
-       WHERE RUN_ID=? AND CHECK_ID=? AND STATUS=''RUNNING''`,
-      [runId, checkId]
+  // Build the wrapper SQL that the task will execute.
+  // This updates DCQ_CHECK_LOG with RUNNING -> SUCCEEDED/FAILED and times.
+  // Snowflake Tasks execute a single SQL statement, so we use a BEGIN...END block.
+  const wrapperSql = `
+BEGIN
+  UPDATE ${logTbl}
+    SET STATUS = ''RUNNING'', STARTED_AT = CURRENT_TIMESTAMP()
+    WHERE RUN_ID = ''${runId}'' AND CHECK_ID = ''${checkId}'' AND STATUS = ''PENDING'';
+  ${callSql};
+  UPDATE ${logTbl}
+    SET STATUS = ''SUCCEEDED'', ENDED_AT = CURRENT_TIMESTAMP()
+    WHERE RUN_ID = ''${runId}'' AND CHECK_ID = ''${checkId}'' AND STATUS = ''RUNNING'';
+EXCEPTION
+  WHEN OTHER THEN
+    LET err_msg := SUBSTR(SQLERRM, 1, 2000);
+    UPDATE ${logTbl}
+      SET STATUS = ''FAILED'', ENDED_AT = CURRENT_TIMESTAMP(), ERROR_MESSAGE = :err_msg
+      WHERE RUN_ID = ''${runId}'' AND CHECK_ID = ''${checkId}'' AND STATUS = ''RUNNING'';
+END;
+`;
+
+  // Insert a PENDING log entry
+  q(
+    `INSERT INTO ${logTbl}
+     (RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, STARTED_AT, ERROR_MESSAGE)
+     VALUES (?, ?, ?, ?, ?, ''PENDING'', NULL, NULL)`,
+    [runId, checkId, checkName, rowNum, procName]
+  );
+
+  const taskName = `${taskPrefix}_${i}`;
+  const taskFqn  = `${outSchema}.${taskName}`;
+
+  taskChecks.push({ checkId: checkId, taskFqn: taskFqn, wrapperSql: wrapperSql });
+}
+
+// ---------------------------------------------------------------------------
+// Create all tasks (suspended) up front
+// ---------------------------------------------------------------------------
+for (let i = 0; i < taskChecks.length; i++) {
+  const tc = taskChecks[i];
+  q(`CREATE OR REPLACE TASK ${tc.taskFqn}
+     WAREHOUSE = ${currentWh}
+     SCHEDULE = ''1 MINUTE''
+     AS ${tc.wrapperSql}`);
+  taskNames.push(tc.taskFqn);
+}
+
+// ---------------------------------------------------------------------------
+// Execute tasks in batches of maxPar
+// ---------------------------------------------------------------------------
+function pollBatchDone(batchCheckIds) {
+  // Poll DCQ_CHECK_LOG until all checks in this batch are no longer PENDING/RUNNING
+  const idList = batchCheckIds.map(id => "''" + id + "''" ).join(",");
+  for (let attempt = 0; attempt < 2160; attempt++) {  // up to ~6 hours at 10s intervals
+    const cnt = scalar(
+      `SELECT COUNT(*) FROM ${logTbl}
+       WHERE RUN_ID = ''${runId}''
+         AND CHECK_ID IN (${idList})
+         AND STATUS IN (''PENDING'', ''RUNNING'')`
     );
-  } catch (e) {
-    anyFailed = true;
-    const msg = (e && e.message) ? e.message.toString().slice(0, 2000) : ''Unknown error'';
-    q(
-      `UPDATE ${logTbl}
-       SET STATUS=''FAILED'', ENDED_AT=CURRENT_TIMESTAMP(), ERROR_MESSAGE=?
-       WHERE RUN_ID=? AND CHECK_ID=? AND STATUS=''RUNNING''`,
-      [msg, runId, checkId]
-    );
+    if (cnt === 0) return;
+    // Sleep 10 seconds via SYSTEM$WAIT
+    q("SELECT SYSTEM$WAIT(10, ''SECONDS'')");
   }
 }
+
+for (let bStart = 0; bStart < taskChecks.length; bStart += maxPar) {
+  const bEnd = Math.min(bStart + maxPar, taskChecks.length);
+  const batchCheckIds = [];
+
+  // Resume and execute each task in this batch
+  for (let i = bStart; i < bEnd; i++) {
+    const tc = taskChecks[i];
+    batchCheckIds.push(tc.checkId);
+    q(`ALTER TASK ${tc.taskFqn} RESUME`);
+    q(`EXECUTE TASK ${tc.taskFqn}`);
+    // Immediately suspend to prevent scheduled re-runs
+    try { q(`ALTER TASK ${tc.taskFqn} SUSPEND`); } catch (e) { /* ignore */ }
+  }
+
+  // Wait for all checks in this batch to finish
+  pollBatchDone(batchCheckIds);
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup: drop all tasks
+// ---------------------------------------------------------------------------
+for (let i = 0; i < taskNames.length; i++) {
+  try { q(`DROP TASK IF EXISTS ${taskNames[i]}`); } catch (e) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Finalize run status
+// ---------------------------------------------------------------------------
+const failCnt = scalar(
+  `SELECT COUNT(*) FROM ${logTbl}
+   WHERE RUN_ID = ''${runId}'' AND STATUS = ''FAILED''`
+);
+const finalStatus = (failCnt > 0) ? ''PARTIAL'' : ''SUCCEEDED'';
 
 q(
   `UPDATE ${runsTbl}
    SET STATUS=?, ENDED_AT=CURRENT_TIMESTAMP(), ERROR_MESSAGE=NULL
    WHERE RUN_ID=?`,
-  [anyFailed ? ''PARTIAL'' : ''SUCCEEDED'', runId]
+  [finalStatus, runId]
 );
 
-return `OK RUN_ID=${runId} STATUS=${anyFailed ? ''PARTIAL'' : ''SUCCEEDED''} TARGET_TABLE=${vTargetTable || ''''} PREV_DB_PARAM=${vPrevDb || ''''} PREV_SCHEMA_NAME=${vPrevSchema || ''''} START_DATE=${vStartDate || ''''} END_DATE=${vEndDate || ''''}`;
+return `OK RUN_ID=${runId} STATUS=${finalStatus} MAX_PARALLEL=${maxPar} TARGET_TABLE=${vTargetTable || ''''} PREV_DB_PARAM=${vPrevDb || ''''} PREV_SCHEMA_NAME=${vPrevSchema || ''''} START_DATE=${vStartDate || ''''} END_DATE=${vEndDate || ''''}`;
 ';

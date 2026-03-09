@@ -168,7 +168,7 @@ def run_query(sql: str, params=None):
         cs.close()
 
 
-def run_async_call(call_sql: str, params: list, db_param: str):
+def run_async_call(call_sql: str, params: list, db_param: str, show_debug: bool = False):
     """Submit a CALL statement as a Snowflake Task so it survives session suspension.
 
     Creates a one-shot task in <db_param>.CHARACTERIZATION_DCQ, executes it,
@@ -189,16 +189,23 @@ def run_async_call(call_sql: str, params: list, db_param: str):
     literals = ", ".join(_lit(p) for p in params)
     inner_sql = f"CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ({literals})"
 
+    # Resolve the current warehouse name (CREATE TASK needs an identifier, not a function)
+    current_wh = _first_cell(run_query("SELECT CURRENT_WAREHOUSE()"))
+
     # Ensure the schema exists
     run_query(f"CREATE SCHEMA IF NOT EXISTS {task_schema}")
 
     # Create and execute a one-shot task
     create_sql = f"""
         CREATE OR REPLACE TASK {task_fqn}
-        WAREHOUSE = CURRENT_WAREHOUSE()
+        WAREHOUSE = {current_wh}
         SCHEDULE = '1 MINUTE'
         AS {inner_sql}
     """
+
+    if show_debug:
+        st.code(create_sql, language="sql")
+
     run_query(create_sql)
     run_query(f"ALTER TASK {task_fqn} RESUME")
     run_query(f"EXECUTE TASK {task_fqn}")
@@ -332,10 +339,16 @@ with st.expander("How to run this app"):
              procedures that accept the additional arguments (the orchestrator detects procedure signatures).
 
         4. Optional date filter
-           - `START_DATE` + `END_DATE`: if provided, check procedures will restrict their queries to records
-             whose primary date column falls within the given range (inclusive). Leave blank to run on all data.
+            - `START_DATE` + `END_DATE`: if provided, check procedures will restrict their queries to records
+              whose primary date column falls within the given range (inclusive). Leave blank to run on all data.
 
-        5. Click Run and review output
+        5. Parallelism
+            - `Max parallel checks`: controls how many checks execute concurrently (default 8). Checks are
+              submitted as Snowflake Tasks and run in batches on the selected warehouse. Higher values
+              use more warehouse resources but finish faster. A multi-cluster warehouse is recommended
+              for best throughput.
+
+        6. Click Run and review output
            - The app prints the returned `RUN_ID` string.
            - Expand "DCQ Check Registry" to see the available checks.
         """
@@ -385,7 +398,11 @@ schema_options = fetch_schemas(db_param)
 if not schema_options:
     st.error(f"No schemas found in database {db_param}.")
     st.stop()
-schema_name = st.selectbox("SCHEMA_NAME", options=schema_options, index=0)
+schema_name = st.selectbox(
+    "SCHEMA_NAME",
+    options=schema_options,
+    index=schema_options.index("PUBLIC") if "PUBLIC" in schema_options else 0,
+)
 
 wh_options = fetch_warehouses("CHARACTERIZATION_")
 default_wh = "CHARACTERIZATION_XS"
@@ -431,33 +448,59 @@ with tab_dcq:
     )
 
     prev_schema_options = fetch_schemas(prev_db_param) if prev_db_param else []
+    prev_schema_default_idx = 0
+    if "PUBLIC" in prev_schema_options:
+        prev_schema_default_idx = prev_schema_options.index("PUBLIC") + 1  # +1 for the "" entry
     prev_schema_name = st.selectbox(
         "PREV_SCHEMA_NAME (optional)",
         options=[""] + prev_schema_options,
+        index=prev_schema_default_idx,
         format_func=lambda x: x if x else "(None)",
         help="Previous schema name (populated from the DB chosen above).",
         key="prev_schema",
     )
 
     st.markdown("---")
+    max_parallel = st.slider(
+        "Max parallel checks",
+        min_value=1,
+        max_value=48,
+        value=8,
+        step=1,
+        help="Number of checks to run concurrently. Higher values use more warehouse resources but finish faster.",
+    )
+    st.markdown("---")
     st.markdown("**Date filter (optional)**")
-    col_start, col_end = st.columns(2)
-    with col_start:
-        start_date = st.date_input(
-            "START_DATE",
-            value=None,
-            help="If set, only include records on or after this date.",
-            key="start_date",
-        )
-    with col_end:
-        end_date = st.date_input(
-            "END_DATE",
-            value=None,
-            help="If set, only include records on or before this date.",
-            key="end_date",
-        )
-    start_date_str: str | None = start_date.isoformat() if start_date else None
-    end_date_str: str | None = end_date.isoformat() if end_date else None
+    use_date_filter = st.checkbox("Enable date filter", value=False)
+    use_10yr_lookback = st.checkbox("Use 10 year lookback", value=False)
+    start_date_str: str | None = None
+    end_date_str: str | None = None
+    if use_10yr_lookback:
+        from datetime import date, timedelta
+        today = date.today()
+        try:
+            ten_years_ago = today.replace(year=today.year - 10)
+        except ValueError:
+            # handles leap day edge case (Feb 29)
+            ten_years_ago = today.replace(year=today.year - 10, day=28)
+        start_date_str = ten_years_ago.isoformat()
+        st.info(f"Start date set to {start_date_str}")
+    elif use_date_filter:
+        col_start, col_end = st.columns(2)
+        with col_start:
+            start_date = st.date_input(
+                "START_DATE",
+                help="Only include records on or after this date.",
+                key="start_date",
+            )
+        with col_end:
+            end_date = st.date_input(
+                "END_DATE",
+                help="Only include records on or before this date.",
+                key="end_date",
+            )
+        start_date_str = start_date.isoformat() if start_date else None
+        end_date_str = end_date.isoformat() if end_date else None
 
     if st.button("Run SP_RUN_DCQ"):
         try:
@@ -474,89 +517,65 @@ with tab_dcq:
                 normalize_optional_param(prev_schema_name),
                 start_date_str,
                 end_date_str,
+                str(max_parallel),
             ]
 
-            call_sql = "CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            task_fqn = run_async_call(call_sql, params, db_param)
-            st.session_state["dcq_task_fqn"] = task_fqn
+            if show_debug:
+                st.write("DEBUG params:", params)
+
+            call_sql = "CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
             st.session_state["dcq_task_db"] = db_param
-            st.session_state["dcq_poll_active"] = True
-            st.info(f"DCQ checks submitted as task `{task_fqn}`. Polling for completion...")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Error submitting task: {e}")
+            st.session_state["dcq_submit_time"] = _first_cell(run_query("SELECT CURRENT_TIMESTAMP()"))
 
-    # --- Async polling UI ---
-    if st.session_state.get("dcq_poll_active"):
-        import time
-
-        poll_db = st.session_state.get("dcq_task_db", db_param)
-        task_fqn = st.session_state.get("dcq_task_fqn", "")
-        runs_tbl = f"{poll_db}.CHARACTERIZATION_DCQ.DCQ_RUNS"
-
-        status_placeholder = st.empty()
-        progress_placeholder = st.empty()
-
-        # Poll loop — check the latest run's status
-        for attempt in range(360):  # up to ~30 minutes (5s intervals)
-            try:
-                rows = run_query(
-                    f"SELECT RUN_ID, STATUS, STARTED_AT, ENDED_AT, ERROR_MESSAGE "
-                    f"FROM {runs_tbl} ORDER BY STARTED_AT DESC LIMIT 1"
-                )
-                if rows:
-                    r = rows[0]
-                    run_status = _row_get(r, ["STATUS", "status"], 1) or ""
-                    run_id = _row_get(r, ["RUN_ID", "run_id"], 0) or ""
-                    ended = _row_get(r, ["ENDED_AT", "ended_at"], 3)
-
-                    if run_status.upper() in ("SUCCEEDED", "PARTIAL", "FAILED"):
-                        # Done — clean up task and show results
-                        try:
-                            run_query(f"DROP TASK IF EXISTS {task_fqn}")
-                        except Exception:
-                            pass
-                        st.session_state["dcq_poll_active"] = False
-                        st.session_state["last_run_id"] = str(run_id)
-                        st.session_state["last_run_db"] = poll_db
-
-                        if run_status.upper() == "SUCCEEDED":
-                            status_placeholder.success(f"Completed: RUN_ID={run_id} STATUS={run_status}")
-                        elif run_status.upper() == "PARTIAL":
-                            status_placeholder.warning(f"Completed with errors: RUN_ID={run_id} STATUS={run_status}")
-                        else:
-                            err = _row_get(r, ["ERROR_MESSAGE", "error_message"], 4) or ""
-                            status_placeholder.error(f"Failed: RUN_ID={run_id} {err}")
-                        progress_placeholder.empty()
-                        break
-                    else:
-                        # Still running — show progress
-                        log_tbl = f"{poll_db}.CHARACTERIZATION_DCQ.DCQ_CHECK_LOG"
-                        try:
-                            prog_rows = run_query(
-                                f"SELECT COUNT(*) AS done, "
-                                f"COUNT_IF(STATUS='FAILED') AS failed "
-                                f"FROM {log_tbl} WHERE RUN_ID = '{run_id}'"
-                            )
-                            if prog_rows:
-                                done = _row_get(prog_rows[0], ["DONE", "done"], 0) or 0
-                                failed = _row_get(prog_rows[0], ["FAILED", "failed"], 1) or 0
-                                status_placeholder.info(
-                                    f"Running... {done} checks completed ({failed} failed) | RUN_ID={run_id}"
-                                )
-                        except Exception:
-                            status_placeholder.info(f"Running... RUN_ID={run_id}")
-            except Exception as poll_err:
-                status_placeholder.info(f"Waiting for results... (attempt {attempt + 1})")
-
-            time.sleep(5)
-        else:
-            # Timed out
-            st.session_state["dcq_poll_active"] = False
-            status_placeholder.warning(
-                f"Polling timed out after 30 minutes. The task may still be running. "
-                f"Check {runs_tbl} for results."
+            runs_tbl = f"{db_param}.CHARACTERIZATION_DCQ.DCQ_RUNS"
+            log_tbl = f"{db_param}.CHARACTERIZATION_DCQ.DCQ_CHECK_LOG"
+            st.info("To monitor progress while running, execute in a worksheet:")
+            st.code(
+                f"-- Current run\n"
+                f"SELECT RUN_ID, STATUS, STARTED_AT FROM {runs_tbl}\n"
+                f"WHERE STATUS = 'RUNNING' ORDER BY STARTED_AT DESC LIMIT 1;\n\n"
+                f"-- Check progress (replace <RUN_ID>)\n"
+                f"SELECT CHECK_ID, CHECK_NAME, STATUS, STARTED_AT, ENDED_AT, ERROR_MESSAGE\n"
+                f"FROM {log_tbl} WHERE RUN_ID = '<RUN_ID>' ORDER BY ROW_NUM;",
+                language="sql",
             )
+
+            with st.spinner(f"Running DCQ checks in parallel (max {max_parallel} concurrent)..."):
+                if backend == "snowpark":
+                    result = run_query(call_sql, params)
+                else:
+                    connector_sql = call_sql.replace("?", "%s")
+                    result = run_query(connector_sql, tuple(params))
+
+            # Show the raw procedure result and extract RUN_ID
+            result_text = _first_cell(result) if result else ""
+            run_id = parse_run_id(result_text)
+
+            if result_text:
+                st.code(result_text)
+
+            if run_id:
+                st.session_state["last_run_id"] = run_id
+                st.session_state["last_run_db"] = db_param
+
+            # Find the run status
+            if run_id:
+                runs_tbl = f"{db_param}.CHARACTERIZATION_DCQ.DCQ_RUNS"
+                rows = run_query(
+                    f"SELECT STATUS FROM {runs_tbl} WHERE RUN_ID = '{run_id}'"
+                )
+                run_status = _row_get(rows[0], ["STATUS", "status"], 0) if rows else ""
+                if run_status.upper() == "SUCCEEDED":
+                    st.success(f"Completed: RUN_ID=`{run_id}` STATUS={run_status}")
+                elif run_status.upper() == "PARTIAL":
+                    st.warning(f"Completed with errors: RUN_ID=`{run_id}` STATUS={run_status}")
+                else:
+                    st.error(f"Status: RUN_ID=`{run_id}` STATUS={run_status}")
+            else:
+                st.warning("Procedure returned but could not parse RUN_ID.")
+        except Exception as e:
+            st.error(f"Error: {e}")
 
     run_id = st.session_state.get("last_run_id")
     run_db = st.session_state.get("last_run_db")
