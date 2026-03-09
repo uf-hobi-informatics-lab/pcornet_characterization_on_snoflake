@@ -160,48 +160,128 @@ def push_sql_assets(cs):
         execute_sql_file(cs, file_path)
 
 # ---------------------------------------------------------------------------
-# Optional: Load JSON data into tables (basic implementation)
+# Load JSON data into tables
 # ---------------------------------------------------------------------------
 def load_json_data(cs):
-    """Load JSON files from the snowflake/ directory into corresponding tables.
-    The JSON file name should be of the form `<TABLE>_data.json` and will be loaded into
-    the table `${DATABASE}.EDC_REF.<TABLE>` (or `${DATABASE}.DCQ.<TABLE>` if the table
-    resides in another schema). This implementation uses the Snowflake `INSERT` command
-    with `PARSE_JSON` for each row.
+    """Load JSON data files from the snowflake/ directory into Snowflake tables.
+
+    Supports both plain `.json` and gzipped `.json.gz` files.  Files are
+    uploaded to a temporary stage and loaded via COPY INTO with
+    STRIP_OUTER_ARRAY (each file is a JSON array of row-objects).
+
+    Naming conventions:
+      - snowflake/edc_ref/<TABLE>_data.json(.gz)  →  CHARACTERIZATION.EDC_REF.<TABLE>
+      - snowflake/<TABLE>_data_full.json(.gz)      →  CHARACTERIZATION.DCQ.<TABLE>
     """
+    import json as _json, gzip as _gzip
+
+    # Use a plain cursor (not DictCursor) so fetchall() returns tuples
+    raw_cs = cs.connection.cursor()
+
     json_root = BASE_DIR / 'snowflake'
-    pattern = str(json_root / '**' / '*_data.json')
-    json_files = glob.glob(pattern, recursive=True)
-    for jf in json_files:
-        path = pathlib.Path(jf)
-        # Infer table name from file name
-        # Example: edc_ref/NAME_data.json -> table NAME in schema EDC_REF
-        parts = path.relative_to(json_root).parts
-        if len(parts) < 2:
+
+    # Collect all *_data*.json and *_data*.json.gz files
+    data_files = sorted(json_root.rglob('*_data*.json')) + sorted(json_root.rglob('*_data*.json.gz'))
+    if not data_files:
+        print('No JSON data files found – skipping data load.')
+        return
+
+    # Ensure schema context for temp stage
+    raw_cs.execute(f'USE DATABASE {DATABASE}')
+    raw_cs.execute(f'USE SCHEMA {DATABASE}.EDC_REF')
+    raw_cs.execute('CREATE OR REPLACE TEMPORARY STAGE data_load_stage')
+
+    for path in data_files:
+        # Determine schema and table from path
+        rel = path.relative_to(json_root)
+        parts = rel.parts
+
+        if len(parts) >= 2:
+            # e.g., edc_ref/CDM_PARSEABLE_RAW_data.json.gz
+            schema_name = parts[0].upper()
+            fname = path.name
+        else:
+            # e.g., DCQ_CHECK_REGISTRY_data_full.json (top level → DCQ schema)
+            schema_name = 'DCQ'
+            fname = path.name
+
+        # Extract table name: strip _data*.json(.gz)
+        stem = fname.replace('.gz', '').replace('.json', '')
+        # Handle both _data and _data_full patterns
+        for suffix in ('_data_full', '_data'):
+            if stem.endswith(suffix):
+                table_name = stem[:-len(suffix)].upper()
+                break
+        else:
+            print(f'Skipping {path}: cannot determine table name')
             continue
-        schema_name = parts[0].upper()
-        filename = path.stem  # e.g., MYTABLE_data
-        if not filename.endswith('_data'):
+
+        full_table = f'{DATABASE}.{schema_name}.{table_name}'
+        is_gz = path.name.endswith('.gz')
+
+        # Check if file has data (skip empty arrays)
+        try:
+            if is_gz:
+                with _gzip.open(path, 'rt', encoding='utf-8') as f:
+                    data = _json.load(f)
+            else:
+                data = _json.loads(path.read_text())
+            if not isinstance(data, list) or len(data) == 0:
+                print(f'Skipping {fname}: empty or not a JSON array')
+                continue
+        except Exception as e:
+            print(f'Skipping {fname}: cannot read JSON: {e}')
             continue
-        table_name = filename[:-5].upper()
-        full_table = f"{DATABASE}.{schema_name}.{table_name}"
-        # Read JSON content
-        import json
-        rows = json.loads(path.read_text())
-        if not isinstance(rows, list):
-            print(f'Skipping {jf}: JSON root is not a list')
-            continue
-        # Insert rows one by one (simple but safe for moderate size)
-        for row in rows:
-            # Convert row dict to JSON string for PARSE_JSON
-            row_json = json.dumps(row)
-            try:
-                cs.execute(
-                    f"INSERT INTO {full_table} SELECT PARSE_JSON(%s)", (row_json,)
-                )
-            except Exception as e:
-                print(f'Error inserting into {full_table} from {jf}: {e}')
-        print(f'Loaded {len(rows)} rows into {full_table}')
+
+        row_count = len(data)
+
+        try:
+            # Get column metadata for the target table
+            raw_cs.execute(
+                f"SELECT COLUMN_NAME, DATA_TYPE FROM {DATABASE}.INFORMATION_SCHEMA.COLUMNS "
+                f"WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s ORDER BY ORDINAL_POSITION",
+                (schema_name, table_name)
+            )
+            col_info = raw_cs.fetchall()
+            if not col_info:
+                print(f'Skipping {fname}: table {full_table} not found or has no columns')
+                continue
+
+            col_names = [c[0] for c in col_info]
+            col_types = {c[0]: c[1] for c in col_info}
+
+            # Build typed SELECT expressions
+            select_parts = []
+            for c in col_names:
+                dt = col_types[c].upper()
+                if 'NUMBER' in dt or 'INT' in dt or 'FLOAT' in dt or 'DOUBLE' in dt or 'DECIMAL' in dt:
+                    select_parts.append(f'$1:{c}::NUMBER')
+                elif 'BOOLEAN' in dt:
+                    select_parts.append(f'$1:{c}::BOOLEAN')
+                elif 'VARIANT' in dt:
+                    select_parts.append(f'$1:{c}::VARIANT')
+                elif 'ARRAY' in dt:
+                    select_parts.append(f'$1:{c}::ARRAY')
+                else:
+                    select_parts.append(f'$1:{c}::VARCHAR')
+
+            # Upload to stage
+            raw_cs.execute(f"PUT file://{path} @data_load_stage/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE")
+
+            # Truncate and load
+            raw_cs.execute(f'TRUNCATE TABLE {full_table}')
+            compression = "'GZIP'" if is_gz else "'NONE'"
+            copy_sql = f"""
+                COPY INTO {full_table} ({', '.join(col_names)})
+                FROM (SELECT {', '.join(select_parts)} FROM @data_load_stage/{fname})
+                FILE_FORMAT = (TYPE='JSON' STRIP_OUTER_ARRAY=TRUE COMPRESSION={compression})
+            """
+            raw_cs.execute(copy_sql)
+            print(f'Loaded {row_count} rows into {full_table}')
+        except Exception as e:
+            print(f'Error loading {fname} into {full_table}: {e}')
+
+    raw_cs.close()
 
 # ---------------------------------------------------------------------------
 # Deploy the Streamlit app
@@ -242,9 +322,8 @@ def main():
     cs = conn.cursor(DictCursor)
     try:
         push_sql_assets(cs)
+        load_json_data(cs)
         push_streamlit_app(cs)
-        # Uncomment the following line if you also want to load JSON data files.
-        # load_json_data(cs)
     finally:
         cs.close()
         conn.close()
