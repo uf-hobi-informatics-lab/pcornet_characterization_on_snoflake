@@ -238,7 +238,8 @@ def load_json_data(cs):
         try:
             # Get column metadata for the target table
             raw_cs.execute(
-                f"SELECT COLUMN_NAME, DATA_TYPE FROM {DATABASE}.INFORMATION_SCHEMA.COLUMNS "
+                f"SELECT COLUMN_NAME, DATA_TYPE, NUMERIC_PRECISION, NUMERIC_SCALE "
+                f"FROM {DATABASE}.INFORMATION_SCHEMA.COLUMNS "
                 f"WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s ORDER BY ORDINAL_POSITION",
                 (schema_name, table_name)
             )
@@ -248,22 +249,24 @@ def load_json_data(cs):
                 continue
 
             col_names = [c[0] for c in col_info]
-            col_types = {c[0]: c[1] for c in col_info}
 
             # Build typed SELECT expressions
             select_parts = []
-            for c in col_names:
-                dt = col_types[c].upper()
+            for c in col_info:
+                name, dt, prec, scale = c[0], c[1].upper(), c[2], c[3]
                 if 'NUMBER' in dt or 'INT' in dt or 'FLOAT' in dt or 'DOUBLE' in dt or 'DECIMAL' in dt:
-                    select_parts.append(f'$1:{c}::NUMBER')
+                    if prec is not None and scale is not None:
+                        select_parts.append(f'$1:{name}::NUMBER({prec},{scale})')
+                    else:
+                        select_parts.append(f'$1:{name}::NUMBER')
                 elif 'BOOLEAN' in dt:
-                    select_parts.append(f'$1:{c}::BOOLEAN')
+                    select_parts.append(f'$1:{name}::BOOLEAN')
                 elif 'VARIANT' in dt:
-                    select_parts.append(f'$1:{c}::VARIANT')
+                    select_parts.append(f'$1:{name}::VARIANT')
                 elif 'ARRAY' in dt:
-                    select_parts.append(f'$1:{c}::ARRAY')
+                    select_parts.append(f'$1:{name}::ARRAY')
                 else:
-                    select_parts.append(f'$1:{c}::VARCHAR')
+                    select_parts.append(f'$1:{name}::VARCHAR')
 
             # Upload to stage
             raw_cs.execute(f"PUT file://{path} @data_load_stage/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE")
