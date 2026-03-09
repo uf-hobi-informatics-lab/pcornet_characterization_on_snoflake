@@ -62,8 +62,8 @@ const vStartDate = (START_DATE || '''').toString().trim() || null;
 const vEndDate = (END_DATE || '''').toString().trim() || null;
 function dateFilter(colName) {
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''''${vStartDate}'''')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''''${vEndDate}'''')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
