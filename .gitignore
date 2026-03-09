@@ -11,3 +11,4 @@ __pycache__/
 # Snowflake JSON data (optional – keep if you want versioned)
 # *.json
 !snowflake/**/*.json
+!snowflake/**/*.json.gz
