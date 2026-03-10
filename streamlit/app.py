@@ -168,6 +168,41 @@ def run_query(sql: str, params=None):
         cs.close()
 
 
+def _get_new_connection():
+    """Create a new Snowflake connection for thread-safe parallel execution."""
+    import os
+    from dotenv import load_dotenv
+    import snowflake.connector
+
+    load_dotenv()
+    private_key_path = os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH")
+    assert private_key_path is not None
+    with open(private_key_path, "rb") as f:
+        pk = f.read()
+
+    return snowflake.connector.connect(
+        account=os.getenv("SNOWFLAKE_ACCOUNT"),
+        user=os.getenv("SNOWFLAKE_USER"),
+        private_key=pk,
+        role=os.getenv("SNOWFLAKE_ROLE"),
+        warehouse=os.getenv("SNOWFLAKE_WAREHOUSE"),
+        database=os.getenv("SNOWFLAKE_DATABASE"),
+        schema=os.getenv("SNOWFLAKE_SCHEMA"),
+        autocommit=True,
+    )
+
+
+def run_query_threadsafe(sql: str, params=None):
+    """Execute a query in a thread-safe manner.
+
+    For Snowpark: uses the shared session (Snowpark is thread-safe).
+    For connector: creates a dedicated cursor per call (connection is shared but
+    each cursor is independent).  For truly parallel workloads, callers should
+    use run_query_new_connection() instead.
+    """
+    return run_query(sql, params)
+
+
 def run_async_call(call_sql: str, params: list, db_param: str, show_debug: bool = False):
     """Submit a CALL statement as a Snowflake Task so it survives session suspension.
 
@@ -464,10 +499,11 @@ with tab_dcq:
     max_parallel = st.slider(
         "Max parallel checks",
         min_value=1,
-        max_value=48,
-        value=8,
+        max_value=20,
+        value=10,
         step=1,
-        help="Number of checks to run concurrently. Higher values use more warehouse resources but finish faster.",
+        help="Number of checks to run concurrently (max 20 due to Snowflake table lock limits). "
+             "Higher values use more warehouse resources but finish faster.",
     )
     st.markdown("---")
     st.markdown("**Date filter (optional)**")
@@ -523,57 +559,154 @@ with tab_dcq:
             if show_debug:
                 st.write("DEBUG params:", params)
 
+            # Step 1: Call SP_RUN_DCQ for setup — returns JSON with run info and check list
             call_sql = "CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-
-            st.session_state["dcq_task_db"] = db_param
-            st.session_state["dcq_submit_time"] = _first_cell(run_query("SELECT CURRENT_TIMESTAMP()"))
-
-            runs_tbl = f"{db_param}.CHARACTERIZATION_DCQ.DCQ_RUNS"
-            log_tbl = f"{db_param}.CHARACTERIZATION_DCQ.DCQ_CHECK_LOG"
-            st.info("To monitor progress while running, execute in a worksheet:")
-            st.code(
-                f"-- Current run\n"
-                f"SELECT RUN_ID, STATUS, STARTED_AT FROM {runs_tbl}\n"
-                f"WHERE STATUS = 'RUNNING' ORDER BY STARTED_AT DESC LIMIT 1;\n\n"
-                f"-- Check progress (replace <RUN_ID>)\n"
-                f"SELECT CHECK_ID, CHECK_NAME, STATUS, STARTED_AT, ENDED_AT, ERROR_MESSAGE\n"
-                f"FROM {log_tbl} WHERE RUN_ID = '<RUN_ID>' ORDER BY ROW_NUM;",
-                language="sql",
-            )
-
-            with st.spinner(f"Running DCQ checks in parallel (max {max_parallel} concurrent)..."):
-                if backend == "snowpark":
-                    result = run_query(call_sql, params)
-                else:
-                    connector_sql = call_sql.replace("?", "%s")
-                    result = run_query(connector_sql, tuple(params))
-
-            # Show the raw procedure result and extract RUN_ID
-            result_text = _first_cell(result) if result else ""
-            run_id = parse_run_id(result_text)
-
-            if result_text:
-                st.code(result_text)
-
-            if run_id:
-                st.session_state["last_run_id"] = run_id
-                st.session_state["last_run_db"] = db_param
-
-            # Find the run status
-            if run_id:
-                runs_tbl = f"{db_param}.CHARACTERIZATION_DCQ.DCQ_RUNS"
-                rows = run_query(
-                    f"SELECT STATUS FROM {runs_tbl} WHERE RUN_ID = '{run_id}'"
-                )
-                run_status = _row_get(rows[0], ["STATUS", "status"], 0) if rows else ""
-                if run_status.upper() == "SUCCEEDED":
-                    st.success(f"Completed: RUN_ID=`{run_id}` STATUS={run_status}")
-                elif run_status.upper() == "PARTIAL":
-                    st.warning(f"Completed with errors: RUN_ID=`{run_id}` STATUS={run_status}")
-                else:
-                    st.error(f"Status: RUN_ID=`{run_id}` STATUS={run_status}")
+            if backend == "snowpark":
+                setup_result = run_query(call_sql, params)
             else:
-                st.warning("Procedure returned but could not parse RUN_ID.")
+                setup_result = run_query(call_sql.replace("?", "%s"), tuple(params))
+
+            import json as _json
+            setup_json = _json.loads(_first_cell(setup_result))
+            run_id = setup_json["runId"]
+            check_list = setup_json["checks"]
+            log_tbl = setup_json["logTable"]
+            runs_tbl = setup_json["runsTable"]
+            out_schema = setup_json["outSchema"]
+
+            st.session_state["last_run_id"] = run_id
+            st.session_state["last_run_db"] = db_param
+
+            st.info(f"RUN_ID: `{run_id}` | {len(check_list)} checks to run (max {max_parallel} parallel)")
+
+            if not check_list:
+                st.warning("No checks to run.")
+                run_query(f"UPDATE {runs_tbl} SET STATUS='SUCCEEDED', ENDED_AT=CURRENT_TIMESTAMP() WHERE RUN_ID='{run_id}'")
+            else:
+                # Step 2: Build CALL SQL for each check
+                def _build_call_sql(check):
+                    proc = check["procName"]
+                    max_args = check["maxArgs"]
+                    args = [db_param, schema_name, run_id]
+                    if max_args >= 4:
+                        args.append(setup_json.get("targetTable") or "ALL")
+                    if max_args >= 6:
+                        args.append(setup_json.get("prevDb"))
+                        args.append(setup_json.get("prevSchema"))
+                    if max_args >= 8:
+                        args.append(setup_json.get("startDate"))
+                        args.append(setup_json.get("endDate"))
+                    return proc, args
+
+                # Step 3: Execute checks in parallel using ThreadPoolExecutor
+                import concurrent.futures
+                import threading
+
+                progress_bar = st.progress(0, text="Starting checks...")
+                status_text = st.empty()
+                counters = {"completed": 0, "failed": 0}
+                count_lock = threading.Lock()
+
+                def _run_check(check):
+                    check_id = check["checkId"]
+                    check_name = check["checkName"]
+                    proc_name, call_args = _build_call_sql(check)
+
+                    # Each thread gets its own connection for true parallelism
+                    thread_conn = None
+                    if backend == "snowpark":
+                        thread_query = run_query
+                    else:
+                        thread_conn = _get_new_connection()
+                        # Set the same warehouse as the main session
+                        if warehouse:
+                            try:
+                                thread_conn.cursor().execute(f"USE WAREHOUSE {warehouse}")
+                            except Exception:
+                                pass
+                        def thread_query(sql, params=None):
+                            cs = thread_conn.cursor()  # type: ignore[union-attr]
+                            try:
+                                cs.execute(sql, params or ())
+                                try:
+                                    return cs.fetchall()
+                                except Exception:
+                                    return []
+                            finally:
+                                cs.close()
+
+                    try:
+                        # Update log to RUNNING
+                        thread_query(
+                            f"UPDATE {log_tbl} SET STATUS='RUNNING', STARTED_AT=CURRENT_TIMESTAMP() "
+                            f"WHERE RUN_ID='{run_id}' AND CHECK_ID='{check_id}' AND STATUS='PENDING'"
+                        )
+
+                        # Execute the check procedure
+                        ph = ", ".join(["?"] * len(call_args)) if backend == "snowpark" else ", ".join(["%s"] * len(call_args))
+                        thread_query(f"CALL {proc_name}({ph})", call_args if backend == "snowpark" else tuple(call_args))
+
+                        # Update log to SUCCEEDED
+                        thread_query(
+                            f"UPDATE {log_tbl} SET STATUS='SUCCEEDED', ENDED_AT=CURRENT_TIMESTAMP() "
+                            f"WHERE RUN_ID='{run_id}' AND CHECK_ID='{check_id}' AND STATUS='RUNNING'"
+                        )
+                        with count_lock:
+                            counters["completed"] += 1
+                        return None
+                    except Exception as e:
+                        err_msg = str(e)[:2000].replace("'", "''")
+                        try:
+                            thread_query(
+                                f"UPDATE {log_tbl} SET STATUS='FAILED', ENDED_AT=CURRENT_TIMESTAMP(), "
+                                f"ERROR_MESSAGE='{err_msg}' "
+                                f"WHERE RUN_ID='{run_id}' AND CHECK_ID='{check_id}' AND STATUS='RUNNING'"
+                            )
+                        except Exception:
+                            pass
+                        with count_lock:
+                            counters["completed"] += 1
+                            counters["failed"] += 1
+                        return f"{check_name}: {str(e)[:200]}"
+                    finally:
+                        if thread_conn is not None:
+                            try:
+                                thread_conn.close()
+                            except Exception:
+                                pass
+
+                total = len(check_list)
+                errors = []
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_parallel) as executor:
+                    futures = {executor.submit(_run_check, c): c for c in check_list}
+                    for future in concurrent.futures.as_completed(futures):
+                        err = future.result()
+                        if err:
+                            errors.append(err)
+                        with count_lock:
+                            done = counters["completed"]
+                            fails = counters["failed"]
+                        pct = done / total
+                        progress_bar.progress(pct, text=f"{done}/{total} checks completed ({fails} failed)")
+
+                progress_bar.progress(1.0, text=f"Done: {total}/{total} checks completed ({counters['failed']} failed)")
+
+                # Step 4: Finalize the run
+                final_status = "PARTIAL" if counters["failed"] > 0 else "SUCCEEDED"
+                run_query(
+                    f"UPDATE {runs_tbl} SET STATUS='{final_status}', ENDED_AT=CURRENT_TIMESTAMP() "
+                    f"WHERE RUN_ID='{run_id}'"
+                )
+
+                if final_status == "SUCCEEDED":
+                    st.success(f"Completed: RUN_ID=`{run_id}` STATUS={final_status}")
+                else:
+                    st.warning(f"Completed with errors: RUN_ID=`{run_id}` STATUS={final_status}")
+                    with st.expander(f"{counters['failed']} failed checks"):
+                        for err in errors:
+                            st.text(err)
+
         except Exception as e:
             st.error(f"Error: {e}")
 

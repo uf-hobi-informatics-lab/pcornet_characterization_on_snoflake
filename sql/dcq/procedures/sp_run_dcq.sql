@@ -44,12 +44,6 @@ function parseProc(procName) {
   if (parts.length === 2) return { db: scalar(''SELECT CURRENT_DATABASE()''), schema: parts[0], name: parts[1] };
   return { db: scalar(''SELECT CURRENT_DATABASE()''), schema: scalar(''SELECT CURRENT_SCHEMA()''), name: parts[0] };
 }
-function sqlLit(v) {
-  if (v === null || v === undefined) return "NULL";
-  // Produces a SQL string literal wrapped in single quotes.
-  // Inside this procedure source, '' = runtime single quote character.
-  return "''" + v.toString().replace(/''/g, "''''") + "''"
-}
 
 const procArgCache = {};
 function getProcMaxArgs(procName) {
@@ -86,14 +80,13 @@ if (vPrevSchema !== null && !isSafeIdentPart(vPrevSchema)) throw new Error(`Unsa
 const vStartDate = normOptIdent(START_DATE);
 const vEndDate = normOptIdent(END_DATE);
 
-const maxPar = Math.max(1, parseInt(MAX_PARALLEL) || 8);
+const maxPar = Math.max(1, parseInt(MAX_PARALLEL) || 10);
 
 const runId = scalar(''SELECT UUID_STRING()'');
 const vMode = normMode(MODE);
 const vPart = normPart(PART);
 const vTargetTable = normTargetTable(TARGET_TABLE);
 const sel = parseSelector(SELECTOR);
-const currentWh = scalar(''SELECT CURRENT_WAREHOUSE()'');
 
 const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const runsTbl = `${outSchema}.DCQ_RUNS`;
@@ -193,32 +186,18 @@ if (vMode === "CHECK_NAME") {
 checksSql += ` ORDER BY ${numCol}, CHECK_NAME`;
 const rs = q(checksSql, binds);
 
-// Collect all checks into an array
-const checks = [];
+// ---------------------------------------------------------------------------
+// Build the check list with CALL SQL for each, insert PENDING log entries
+// ---------------------------------------------------------------------------
+const checkList = [];
+
 while (rs.next()) {
-  checks.push({
-    checkId:   rs.getColumnValue(1),
-    checkName: rs.getColumnValue(2),
-    rowNum:    rs.getColumnValue(3),
-    procName:  rs.getColumnValue(5)
-  });
-}
+  const checkId   = rs.getColumnValue(1);
+  const checkName = rs.getColumnValue(2);
+  const rowNum    = rs.getColumnValue(3);
+  const procName  = rs.getColumnValue(5);
 
-// ---------------------------------------------------------------------------
-// Pre-validate checks and build task SQL for each
-// ---------------------------------------------------------------------------
-const taskPrefix = `DCQ_${runId.replace(/-/g, "").substring(0, 12)}`;
-const taskChecks = [];   // checks that will get a task
-const taskNames  = [];   // FQN of every task we create (for cleanup)
-
-for (let i = 0; i < checks.length; i++) {
-  const c = checks[i];
-  const checkId = c.checkId;
-  const checkName = c.checkName;
-  const rowNum = c.rowNum;
-  const procName = c.procName;
-
-  // Skip checks with no/invalid proc name — log immediately
+  // Skip checks with no/invalid proc name
   if (!procName || procName.toString().trim() === '''') {
     q(
       `INSERT INTO ${logTbl}
@@ -238,37 +217,10 @@ for (let i = 0; i < checks.length; i++) {
     continue;
   }
 
-  // Determine the CALL statement based on procedure arity
+  // Determine the number of args the procedure accepts
   const maxArgs = getProcMaxArgs(procName.toString().trim());
-  const argVals = [DB_PARAM, SCHEMA_NAME, runId];
-  if (maxArgs >= 4) argVals.push(vTargetTable || ''ALL'');
-  if (maxArgs >= 6) argVals.push(vPrevDb, vPrevSchema);
-  if (maxArgs >= 8) argVals.push(vStartDate, vEndDate);
-  const callLiterals = argVals.map(v => sqlLit(v)).join(", ");
-  const callSql = `CALL ${procName.toString().trim()}(${callLiterals})`;
 
-  // Build the wrapper SQL that the task will execute.
-  // This updates DCQ_CHECK_LOG with RUNNING -> SUCCEEDED/FAILED and times.
-  // Snowflake Tasks execute a single SQL statement, so we use a BEGIN...END block.
-  const wrapperSql = `
-BEGIN
-  UPDATE ${logTbl}
-    SET STATUS = ''RUNNING'', STARTED_AT = CURRENT_TIMESTAMP()
-    WHERE RUN_ID = ''${runId}'' AND CHECK_ID = ''${checkId}'' AND STATUS = ''PENDING'';
-  ${callSql};
-  UPDATE ${logTbl}
-    SET STATUS = ''SUCCEEDED'', ENDED_AT = CURRENT_TIMESTAMP()
-    WHERE RUN_ID = ''${runId}'' AND CHECK_ID = ''${checkId}'' AND STATUS = ''RUNNING'';
-EXCEPTION
-  WHEN OTHER THEN
-    LET err_msg := SUBSTR(SQLERRM, 1, 2000);
-    UPDATE ${logTbl}
-      SET STATUS = ''FAILED'', ENDED_AT = CURRENT_TIMESTAMP(), ERROR_MESSAGE = :err_msg
-      WHERE RUN_ID = ''${runId}'' AND CHECK_ID = ''${checkId}'' AND STATUS = ''RUNNING'';
-END;
-`;
-
-  // Insert a PENDING log entry
+  // Insert PENDING log entry
   q(
     `INSERT INTO ${logTbl}
      (RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, PROC_NAME, STATUS, STARTED_AT, ERROR_MESSAGE)
@@ -276,83 +228,33 @@ END;
     [runId, checkId, checkName, rowNum, procName]
   );
 
-  const taskName = `${taskPrefix}_${i}`;
-  const taskFqn  = `${outSchema}.${taskName}`;
-
-  taskChecks.push({ checkId: checkId, taskFqn: taskFqn, wrapperSql: wrapperSql });
+  checkList.push({
+    checkId:   checkId,
+    checkName: checkName,
+    rowNum:    rowNum,
+    procName:  procName.toString().trim(),
+    maxArgs:   maxArgs
+  });
 }
 
 // ---------------------------------------------------------------------------
-// Create all tasks (suspended) up front
+// Return JSON with run info and check list for the caller to execute
 // ---------------------------------------------------------------------------
-for (let i = 0; i < taskChecks.length; i++) {
-  const tc = taskChecks[i];
-  q(`CREATE OR REPLACE TASK ${tc.taskFqn}
-     WAREHOUSE = ${currentWh}
-     SCHEDULE = ''1 MINUTE''
-     AS ${tc.wrapperSql}`);
-  taskNames.push(tc.taskFqn);
-}
+const result = {
+  runId:       runId,
+  dbParam:     DB_PARAM,
+  schemaName:  SCHEMA_NAME,
+  maxParallel: maxPar,
+  targetTable: vTargetTable,
+  prevDb:      vPrevDb,
+  prevSchema:  vPrevSchema,
+  startDate:   vStartDate,
+  endDate:     vEndDate,
+  outSchema:   outSchema,
+  logTable:    logTbl,
+  runsTable:   runsTbl,
+  checks:      checkList
+};
 
-// ---------------------------------------------------------------------------
-// Execute tasks in batches of maxPar
-// ---------------------------------------------------------------------------
-function pollBatchDone(batchCheckIds) {
-  // Poll DCQ_CHECK_LOG until all checks in this batch are no longer PENDING/RUNNING
-  const idList = batchCheckIds.map(id => "''" + id + "''" ).join(",");
-  for (let attempt = 0; attempt < 2160; attempt++) {  // up to ~6 hours at 10s intervals
-    const cnt = scalar(
-      `SELECT COUNT(*) FROM ${logTbl}
-       WHERE RUN_ID = ''${runId}''
-         AND CHECK_ID IN (${idList})
-         AND STATUS IN (''PENDING'', ''RUNNING'')`
-    );
-    if (cnt === 0) return;
-    // Sleep 10 seconds via SYSTEM$WAIT
-    q("SELECT SYSTEM$WAIT(10, ''SECONDS'')");
-  }
-}
-
-for (let bStart = 0; bStart < taskChecks.length; bStart += maxPar) {
-  const bEnd = Math.min(bStart + maxPar, taskChecks.length);
-  const batchCheckIds = [];
-
-  // Resume and execute each task in this batch
-  for (let i = bStart; i < bEnd; i++) {
-    const tc = taskChecks[i];
-    batchCheckIds.push(tc.checkId);
-    q(`ALTER TASK ${tc.taskFqn} RESUME`);
-    q(`EXECUTE TASK ${tc.taskFqn}`);
-    // Immediately suspend to prevent scheduled re-runs
-    try { q(`ALTER TASK ${tc.taskFqn} SUSPEND`); } catch (e) { /* ignore */ }
-  }
-
-  // Wait for all checks in this batch to finish
-  pollBatchDone(batchCheckIds);
-}
-
-// ---------------------------------------------------------------------------
-// Cleanup: drop all tasks
-// ---------------------------------------------------------------------------
-for (let i = 0; i < taskNames.length; i++) {
-  try { q(`DROP TASK IF EXISTS ${taskNames[i]}`); } catch (e) { /* ignore */ }
-}
-
-// ---------------------------------------------------------------------------
-// Finalize run status
-// ---------------------------------------------------------------------------
-const failCnt = scalar(
-  `SELECT COUNT(*) FROM ${logTbl}
-   WHERE RUN_ID = ''${runId}'' AND STATUS = ''FAILED''`
-);
-const finalStatus = (failCnt > 0) ? ''PARTIAL'' : ''SUCCEEDED'';
-
-q(
-  `UPDATE ${runsTbl}
-   SET STATUS=?, ENDED_AT=CURRENT_TIMESTAMP(), ERROR_MESSAGE=NULL
-   WHERE RUN_ID=?`,
-  [finalStatus, runId]
-);
-
-return `OK RUN_ID=${runId} STATUS=${finalStatus} MAX_PARALLEL=${maxPar} TARGET_TABLE=${vTargetTable || ''''} PREV_DB_PARAM=${vPrevDb || ''''} PREV_SCHEMA_NAME=${vPrevSchema || ''''} START_DATE=${vStartDate || ''''} END_DATE=${vEndDate || ''''}`;
+return JSON.stringify(result);
 ';
