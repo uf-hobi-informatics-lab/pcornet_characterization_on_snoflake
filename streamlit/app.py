@@ -579,6 +579,17 @@ with tab_dcq:
 
             st.info(f"RUN_ID: `{run_id}` | {len(check_list)} checks to run (max {max_parallel} parallel)")
 
+            st.info("To monitor progress while running, execute in a worksheet:")
+            st.code(
+                f"-- Current run\n"
+                f"SELECT RUN_ID, STATUS, STARTED_AT FROM {runs_tbl}\n"
+                f"WHERE STATUS = 'RUNNING' ORDER BY STARTED_AT DESC LIMIT 1;\n\n"
+                f"-- Check progress (replace <RUN_ID>)\n"
+                f"SELECT CHECK_ID, CHECK_NAME, STATUS, STARTED_AT, ENDED_AT, ERROR_MESSAGE\n"
+                f"FROM {log_tbl} WHERE RUN_ID = '<RUN_ID>' ORDER BY ROW_NUM;",
+                language="sql",
+            )
+
             if not check_list:
                 st.warning("No checks to run.")
                 run_query(f"UPDATE {runs_tbl} SET STATUS='SUCCEEDED', ENDED_AT=CURRENT_TIMESTAMP() WHERE RUN_ID='{run_id}'")

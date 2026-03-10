@@ -1,6 +1,8 @@
 # Characterization Snowflake Repository
 
-This repository contains all the Snowflake objects required to recreate the **Characterization** data‑quality checks environment, as well as a small Streamlit dashboard.
+This project reimplements PCORnet's Empirical Data Curation (EDC) Data Quality Characterization (DCQ) checks, originally written in SAS, as native Snowflake stored procedures. By porting the logic to Snowflake, the characterization process runs directly against the data warehouse — eliminating the need for data extraction and leveraging Snowflake's scalability to execute checks in parallel. The system is deployed as a Streamlit-in-Snowflake application that orchestrates up to 48 DCQ checks with configurable concurrency, providing real-time progress monitoring and centralized result storage.
+
+New checks can be added by creating a stored procedure that follows the existing signature convention and registering it in the DCQ_CHECK_REGISTRY table — no changes to the application code are required. This design makes it straightforward to extend the system as PCORnet's EDC specifications evolve or as site-specific quality checks are needed.
 
 ---
 
