@@ -82,12 +82,13 @@ const tableDateCol = {
   PRO_CM: ''PRO_DATE'',
   VITAL: ''MEASURE_DATE''
 };
-function dateFilterWhere(tbl) {
+function dateFilterWhere(tbl, alias) {
   const dc = tableDateCol[tbl] || null;
   if (!dc) return '''';
+  const col = alias ? `${alias}.${dc}` : dc;
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${col}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${col}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
@@ -159,12 +160,12 @@ const rs = q(
        UPPER(TRIM(d.DX_ORIGIN)) AS dx_origin,
        UPPER(TRIM(d.PDX)) AS pdx
      FROM ${dia} d
-     JOIN enc_ip_ei e
-       ON d.ENCOUNTERID = e.ENCOUNTERID
-     WHERE d.ENCOUNTERID IS NOT NULL
-       AND d.DX_ORIGIN IS NOT NULL
-       AND TRIM(d.DX_ORIGIN) <> ''''
-       AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')${dateFilterWhere(''DIAGNOSIS'')}
+      JOIN enc_ip_ei e
+        ON d.ENCOUNTERID = e.ENCOUNTERID
+      WHERE d.ENCOUNTERID IS NOT NULL
+        AND d.DX_ORIGIN IS NOT NULL
+        AND TRIM(d.DX_ORIGIN) <> ''''
+        AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')${dateFilterWhere(''DIAGNOSIS'', ''d'')}
    ),
    per_enc_origin AS (
      SELECT
@@ -234,11 +235,11 @@ const diagCtRs = q(
    FROM ${dia} d
    JOIN ${enc} e
      ON d.ENCOUNTERID = e.ENCOUNTERID
-   WHERE e.ENC_TYPE IN (''IP'',''EI'')
-     AND d.ENCOUNTERID IS NOT NULL
-     AND d.DX_ORIGIN IS NOT NULL
-     AND TRIM(d.DX_ORIGIN) <> ''''
-     AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')${dateFilterWhere(''ENCOUNTER'')}${dateFilterWhere(''DIAGNOSIS'')}`
+    WHERE e.ENC_TYPE IN (''IP'',''EI'')
+      AND d.ENCOUNTERID IS NOT NULL
+      AND d.DX_ORIGIN IS NOT NULL
+      AND TRIM(d.DX_ORIGIN) <> ''''
+      AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')${dateFilterWhere(''ENCOUNTER'', ''e'')}${dateFilterWhere(''DIAGNOSIS'', ''d'')}`
 );
 diagCtRs.next();
 anyDiag = Number(diagCtRs.getColumnValue(1)) > 0;
