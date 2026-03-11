@@ -15,7 +15,17 @@ function tableExists(db, schema, table) {
   rs.next();
   return rs.getColumnValue(1) > 0;
 }
-function insertMetric(resultsTbl, baseBinds, metric, valueNum, valueStr, exceptionFlag, detailsObj) {
+function colExists(db, schema, table, col) {
+  const rs = q(
+    `SELECT COUNT(*)
+     FROM ${db}.INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [schema.toUpperCase(), table.toUpperCase(), col.toUpperCase()]
+  );
+  rs.next();
+  return rs.getColumnValue(1) > 0;
+}
+function insertMetric(resultsTbl, baseBinds, sourceTable, metric, valueNum, valueStr, exceptionFlag, detailsObj) {
   const flagInt = exceptionFlag ? 1 : 0;
   const detailsJson = JSON.stringify(detailsObj || {});
   q(
@@ -26,12 +36,12 @@ function insertMetric(resultsTbl, baseBinds, metric, valueNum, valueStr, excepti
     )
     SELECT
       ?, ?, ?, ?, ?,
-      ''ENCOUNTER'', NULL, ?, ?, ?,
+      ?, NULL, ?, ?, ?,
       5,
       IFF(?=1, TRUE, FALSE),
       PARSE_JSON(?)
     `,
-    baseBinds.concat([metric, valueNum, valueStr, flagInt, detailsJson])
+    baseBinds.concat([sourceTable, metric, valueNum, valueStr, flagInt, detailsJson])
   );
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
@@ -40,7 +50,18 @@ function normDateParam(x) { if (x === null || x === undefined) return null; var 
 const vStartDate = normDateParam(START_DATE);
 const vEndDate = normDateParam(END_DATE);
 const tableDateCol = {
-  ENCOUNTER: ''ADMIT_DATE''
+  CONDITION: ''REPORT_DATE'',
+  DIAGNOSIS: ''DX_DATE'',
+  ENCOUNTER: ''ADMIT_DATE'',
+  IMMUNIZATION: ''VX_RECORD_DATE'',
+  LAB_RESULT_CM: ''RESULT_DATE'',
+  MED_ADMIN: ''MEDADMIN_START_DATE'',
+  OBS_CLIN: ''OBSCLIN_START_DATE'',
+  OBS_GEN: ''OBSGEN_START_DATE'',
+  PRESCRIBING: ''RX_ORDER_DATE'',
+  PROCEDURES: ''PX_DATE'',
+  PRO_CM: ''PRO_DATE'',
+  VITAL: ''MEASURE_DATE''
 };
 function dateFilterWhere(tbl) {
   const dc = tableDateCol[tbl] || null;
@@ -54,9 +75,7 @@ const outSchema = `${DB_PARAM}.CHARACTERIZATION_DCQ`;
 const resultsTbl = `${outSchema}.DCQ_RESULTS`;
 const rowNum = 1.11;
 const only = (TARGET_TABLE || "ALL").toString().trim().toUpperCase();
-if (!(only === "ALL" || only === "ENCOUNTER")) {
-  throw new Error(`Invalid TARGET_TABLE=''${TARGET_TABLE}''. Use ALL or ENCOUNTER.`);
-}
+
 q(`CREATE SCHEMA IF NOT EXISTS ${outSchema}`);
 q(`CREATE TABLE IF NOT EXISTS ${resultsTbl} (
   RUN_ID STRING, CHECK_ID STRING, CHECK_NAME STRING, ROW_NUM NUMBER(10,2), EDC_TABLE STRING,
@@ -76,55 +95,73 @@ if (!regRs.next()) throw new Error(`No registry row found for ROW_NUM=${rowNum}`
 const checkId = regRs.getColumnValue(1);
 const checkName = regRs.getColumnValue(2);
 const edcTable = regRs.getColumnValue(3);
+const base = [RUN_ID, checkId, checkName, rowNum, edcTable];
 // delete prior rows for this run/check
 q(`DELETE FROM ${resultsTbl} WHERE RUN_ID = ? AND ROW_NUM = ?`, [RUN_ID, rowNum]);
-if (!tableExists(DB_PARAM, SCHEMA_NAME, "ENCOUNTER")) {
-  const base = [RUN_ID, checkId, checkName, rowNum, edcTable];
-  insertMetric(resultsTbl, base, "STATUS", null, "ERROR", true, { message: "ENCOUNTER table does not exist" });
-  return `DC 1.11 ERROR: ENCOUNTER missing`;
+
+// All CDM tables that have ENCOUNTERID and PATID
+const encIdTables = [
+  "CONDITION","DIAGNOSIS","ENCOUNTER","IMMUNIZATION","LAB_RESULT_CM",
+  "MED_ADMIN","OBS_CLIN","OBS_GEN","PRESCRIBING","PROCEDURES","PRO_CM","VITAL"
+];
+
+let tablesToCheck = encIdTables;
+if (only !== "ALL") {
+  if (!encIdTables.includes(only)) {
+    throw new Error(`Invalid TARGET_TABLE=''${TARGET_TABLE}''. Use ALL or one of: ${encIdTables.join('', '')}.`);
+  }
+  tablesToCheck = [only];
 }
-const fullEnc = `${DB_PARAM}.${SCHEMA_NAME}.ENCOUNTER`;
-const rs = q(
-  `
-  WITH per_enc AS (
-    SELECT
-      ENCOUNTERID,
-      COUNT(DISTINCT PATID) AS patid_n
-    FROM ${fullEnc}
-    WHERE ENCOUNTERID IS NOT NULL ${dateFilterWhere(''ENCOUNTER'')}
-    GROUP BY ENCOUNTERID
-  ),
-  agg AS (
-    SELECT
-      COUNT(*) AS encounterid_distinct_n,
-      SUM(IFF(patid_n > 1, 1, 0)) AS multi_patid_encounterid_n
-    FROM per_enc
-  )
-  SELECT
-    encounterid_distinct_n,
-    multi_patid_encounterid_n,
-    IFF(encounterid_distinct_n > 0,
-        (multi_patid_encounterid_n::FLOAT / encounterid_distinct_n::FLOAT) * 100,
-        0
-    ) AS multi_patid_encounterid_pct
-  FROM agg
-  `
-);
-rs.next();
-const denom = Number(rs.getColumnValue(1));
-const numer = Number(rs.getColumnValue(2));
-const pct = Number(rs.getColumnValue(3));
-const flag = (pct > 5) ? 1 : 0;
-const details = {
-  encounterid_distinct_n: denom,
-  multi_patid_encounterid_n: numer,
-  multi_patid_encounterid_pct: pct,
-  threshold_pct: 5
-};
-const base = [RUN_ID, checkId, checkName, rowNum, edcTable];
-insertMetric(resultsTbl, base, "ENCOUNTERID_DISTINCT_N", denom, String(denom), false, details);
-insertMetric(resultsTbl, base, "MULTI_PATID_ENCOUNTERID_N", numer, String(numer), false, details);
-insertMetric(resultsTbl, base, "MULTI_PATID_ENCOUNTERID_PCT", pct, String(pct), false, details);
-insertMetric(resultsTbl, base, "MULTI_PATID_ENCOUNTERID_FLAG", flag, String(flag), (flag === 1), details);
+
+for (const tbl of tablesToCheck) {
+  if (!tableExists(DB_PARAM, SCHEMA_NAME, tbl) ||
+      !colExists(DB_PARAM, SCHEMA_NAME, tbl, ''ENCOUNTERID'') ||
+      !colExists(DB_PARAM, SCHEMA_NAME, tbl, ''PATID'')) {
+    insertMetric(resultsTbl, base, tbl, "STATUS", null, "SKIPPED", false,
+      { message: `${tbl} missing or lacks ENCOUNTERID/PATID columns` });
+    continue;
+  }
+
+  const fullTbl = `${DB_PARAM}.${SCHEMA_NAME}.${tbl}`;
+  const rs = q(
+    `WITH per_enc AS (
+       SELECT ENCOUNTERID, COUNT(DISTINCT PATID) AS patid_n
+       FROM ${fullTbl}
+       WHERE ENCOUNTERID IS NOT NULL${dateFilterWhere(tbl)}
+       GROUP BY ENCOUNTERID
+     ),
+     agg AS (
+       SELECT
+         COUNT(*) AS encounterid_distinct_n,
+         SUM(IFF(patid_n > 1, 1, 0)) AS multi_patid_encounterid_n
+       FROM per_enc
+     )
+     SELECT
+       encounterid_distinct_n,
+       multi_patid_encounterid_n,
+       IFF(encounterid_distinct_n > 0,
+           (multi_patid_encounterid_n::FLOAT / encounterid_distinct_n::FLOAT) * 100,
+           0
+       ) AS multi_patid_encounterid_pct
+     FROM agg`
+  );
+  rs.next();
+  const denom = Number(rs.getColumnValue(1));
+  const numer = Number(rs.getColumnValue(2));
+  const pct = Number(rs.getColumnValue(3));
+  const flag = (pct > 5) ? 1 : 0;
+  const details = {
+    source_table: tbl,
+    encounterid_distinct_n: denom,
+    multi_patid_encounterid_n: numer,
+    multi_patid_encounterid_pct: pct,
+    threshold_pct: 5
+  };
+  insertMetric(resultsTbl, base, tbl, "ENCOUNTERID_DISTINCT_N", denom, String(denom), false, details);
+  insertMetric(resultsTbl, base, tbl, "MULTI_PATID_ENCOUNTERID_N", numer, String(numer), false, details);
+  insertMetric(resultsTbl, base, tbl, "MULTI_PATID_ENCOUNTERID_PCT", pct, String(pct), false, details);
+  insertMetric(resultsTbl, base, tbl, "MULTI_PATID_ENCOUNTERID_FLAG", flag, String(flag), (flag === 1), details);
+}
+
 return `DC 1.11 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only}`;
 ';
