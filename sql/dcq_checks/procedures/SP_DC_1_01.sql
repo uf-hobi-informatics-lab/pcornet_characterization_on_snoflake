@@ -1,30 +1,26 @@
 CREATE OR REPLACE PROCEDURE CHARACTERIZATION.DCQ_CHECKS.SP_DC_1_01"("DB_PARAM" VARCHAR, "SCHEMA_NAME" VARCHAR, "RUN_ID" VARCHAR, "TARGET_TABLE" VARCHAR, "PREV_DB_PARAM" VARCHAR, "PREV_SCHEMA_NAME" VARCHAR, "START_DATE" VARCHAR, "END_DATE" VARCHAR)
 RETURNS VARCHAR
 LANGUAGE JAVASCRIPT
-COMMENT='DC 1.01 (Table IID): required CDM tables exist in <DB_PARAM>.<SCHEMA_NAME>. Required-for-all: DEMOGRAPHIC, ENROLLMENT, ENCOUNTER, DIAGNOSIS, PROCEDURES, HARVEST. EHR-only tables (LAB_RESULT_CM, PRESCRIBING, VITAL) are enforced only if EHR can be inferred from HARVEST; otherwise recorded informationally. Run: CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_1_01(DB_PARAM, SCHEMA_NAME, RUN_ID, TARGET_TABLE|''ALL''); or driver: CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ(DB_PARAM, SCHEMA_NAME, ''ROW_NUM'', ''1.01'', ''part1'', TARGET_TABLE|''ALL''). Output: <DB_PARAM>.CHARACTERIZATION_DCQ.DCQ_RESULTS where ROW_NUM=1.01. Interpret: per SOURCE_TABLE, METRIC=''MISSING_REQUIRED_TABLE_FLAG'' with VALUE_NUM=1 / EXCEPTION_FLAG=TRUE indicates a required table is missing.'
+COMMENT='DC 1.01 (Table IID): checks whether all 25 PCORnet CDM tables exist in <DB_PARAM>.<SCHEMA_NAME>. Core required: DEMOGRAPHIC, ENROLLMENT, ENCOUNTER, DIAGNOSIS, PROCEDURES, HARVEST. EHR-only tables (LAB_RESULT_CM, PRESCRIBING, VITAL) are flagged as exceptions only when EHR is inferred from HARVEST. Remaining CDM tables are checked informationally. Output: <DB_PARAM>.CHARACTERIZATION_DCQ.DCQ_RESULTS where ROW_NUM=1.01.'
 EXECUTE AS CALLER
 AS '
 function q(sqlText, binds) { return snowflake.execute({ sqlText, binds: binds || [] }); }
 function isSafeIdentPart(s) { return /^[A-Za-z0-9_$]+$/.test((s || '''').toString()); }
 function tableMeta(db, schema, tables) {
-  q("DROP TABLE IF EXISTS _TBL");
-  q("CREATE TEMP TABLE _TBL(table_name STRING)");
-  if (tables.length) {
-    const selects = tables.map(() => "SELECT ?").join(" UNION ALL ");
-    q(`INSERT INTO _TBL(table_name) ${selects}`, tables);
-  }
-  const rs = q(
-    `SELECT t.table_name, i.row_count
-     FROM _TBL t
-     LEFT JOIN ${db}.INFORMATION_SCHEMA.TABLES i
-       ON i.table_schema = ? AND i.table_name = t.table_name`,
-    [schema.toUpperCase()]
-  );
   const out = {};
+  for (const t of tables) out[t] = { exists: false, row_count: null };
+  if (!tables.length) return out;
+  const placeholders = tables.map(() => "?").join(",");
+  const rs = q(
+    `SELECT TABLE_NAME, ROW_COUNT
+     FROM ${db}.INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (${placeholders})`,
+    [schema.toUpperCase()].concat(tables)
+  );
   while (rs.next()) {
     const name = rs.getColumnValue(1);
     const rc = rs.getColumnValue(2);
-    out[name] = { exists: rc !== null, row_count: rc };
+    out[name] = { exists: true, row_count: rc };
   }
   return out;
 }
@@ -107,18 +103,21 @@ if (only === "ALL") {
 } else {
   q(`DELETE FROM ${resultsTbl} WHERE RUN_ID = ? AND ROW_NUM = ? AND UPPER(SOURCE_TABLE)=?`, [RUN_ID, rowNum, only]);
 }
-const requiredAll = ["DEMOGRAPHIC","ENROLLMENT","ENCOUNTER","DIAGNOSIS","PROCEDURES","HARVEST"];
-const requiredEhr = ["LAB_RESULT_CM","PRESCRIBING","VITAL"];
+const allCdmTables = [
+  "CONDITION","DEATH","DEATH_CAUSE","DEMOGRAPHIC","DIAGNOSIS","DISPENSING",
+  "ENCOUNTER","ENROLLMENT","EXTERNAL_MEDS","HARVEST","HASH_TOKEN",
+  "IMMUNIZATION","LAB_HISTORY","LAB_RESULT_CM","LDS_ADDRESS_HISTORY",
+  "MED_ADMIN","OBS_CLIN","OBS_GEN","PAT_RELATIONSHIP","PCORNET_TRIAL",
+  "PRESCRIBING","PROCEDURES","PROVIDER","PRO_CM","VITAL"
+];
+const coreRequired = ["DEMOGRAPHIC","ENROLLMENT","ENCOUNTER","DIAGNOSIS","PROCEDURES","HARVEST"];
+const ehrRequired = ["LAB_RESULT_CM","PRESCRIBING","VITAL"];
 const ehrFlag = harvestSuggestsEhr(DB_PARAM, SCHEMA_NAME); // true/false/null
 const enforceEhr = (ehrFlag === true);
-let tables = requiredAll.slice();
-if (enforceEhr) tables = tables.concat(requiredEhr);
+let tables = allCdmTables.slice();
 if (only !== "ALL") {
-  if (!tables.includes(only) && only !== "HARVEST") {
-    // allow running a single required table only
-    if (!requiredAll.includes(only) && !requiredEhr.includes(only) && only !== "HARVEST") {
-      throw new Error(`Invalid TARGET_TABLE=''${TARGET_TABLE}''. Use ALL or a CDM table name.`);
-    }
+  if (!allCdmTables.includes(only)) {
+    throw new Error(`Invalid TARGET_TABLE=''${TARGET_TABLE}''. Use ALL or a CDM table name.`);
   }
   tables = [only];
 }
@@ -126,15 +125,20 @@ const meta = tableMeta(DB_PARAM, SCHEMA_NAME, tables);
 for (const t of tables) {
   const m = meta[t] || { exists: false, row_count: null };
   const missing = !m.exists;
+  const isCore = coreRequired.includes(t);
+  const isEhr = ehrRequired.includes(t);
+  const tier = isCore ? "CORE" : (isEhr ? "EHR" : "CDM");
+  // Exception if a core table is missing, or an EHR table is missing when EHR is inferred
+  const missingException = missing && (isCore || (isEhr && enforceEhr));
   const details = JSON.stringify({
     table_exists: m.exists,
     row_count: m.row_count,
-    required_tier: requiredAll.includes(t) ? "ALL" : (requiredEhr.includes(t) ? "EHR" : "UNKNOWN"),
+    required_tier: tier,
     ehr_inferred: ehrFlag
   });
   const base = [RUN_ID, reg.checkId, reg.checkName, rowNum, reg.edcTable, t];
   insertMetric(resultsTbl, base, "TABLE_EXISTS_FLAG", m.exists ? 1 : 0, m.exists ? "1" : "0", false, details);
-  insertMetric(resultsTbl, base, "MISSING_REQUIRED_TABLE_FLAG", missing ? 1 : 0, missing ? "1" : "0", missing, details);
+  insertMetric(resultsTbl, base, "MISSING_REQUIRED_TABLE_FLAG", missing ? 1 : 0, missing ? "1" : "0", missingException, details);
 }
 return `DC 1.01 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only}`;
 ';
