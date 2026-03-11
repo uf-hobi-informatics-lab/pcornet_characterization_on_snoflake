@@ -8,24 +8,20 @@ function q(sqlText, binds) { return snowflake.execute({ sqlText, binds: binds ||
 function isSafeIdentPart(s) { return /^[A-Za-z0-9_$]+$/.test((s || '''').toString()); }
 function scalar(sqlText, binds) { const rs = q(sqlText, binds || []); rs.next(); return rs.getColumnValue(1); }
 function tableMeta(db, schema, tables) {
-  q("DROP TABLE IF EXISTS _TBL");
-  q("CREATE TEMP TABLE _TBL(table_name STRING)");
-  if (tables.length) {
-    const selects = tables.map(() => "SELECT ?").join(" UNION ALL ");
-    q(`INSERT INTO _TBL(table_name) ${selects}`, tables);
-  }
-  const rs = q(
-    `SELECT t.table_name, i.row_count
-     FROM _TBL t
-     LEFT JOIN ${db}.INFORMATION_SCHEMA.TABLES i
-       ON i.table_schema = ? AND i.table_name = t.table_name`,
-    [schema.toUpperCase()]
-  );
   const out = {};
+  for (const t of tables) out[t] = { exists: false, row_count: null };
+  if (!tables.length) return out;
+  const placeholders = tables.map(() => "?").join(",");
+  const rs = q(
+    `SELECT TABLE_NAME, ROW_COUNT
+     FROM ${db}.INFORMATION_SCHEMA.TABLES
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME IN (${placeholders})`,
+    [schema.toUpperCase()].concat(tables)
+  );
   while (rs.next()) {
     const name = rs.getColumnValue(1);
     const rc = rs.getColumnValue(2);
-    out[name] = { exists: rc !== null, row_count: rc };
+    out[name] = { exists: true, row_count: rc };
   }
   return out;
 }
@@ -104,14 +100,14 @@ if (only === "ALL") {
 } else {
   q(`DELETE FROM ${resultsTbl} WHERE RUN_ID = ? AND ROW_NUM = ? AND UPPER(SOURCE_TABLE)=?`, [RUN_ID, rowNum, only]);
 }
-const requiredAll = ["DEMOGRAPHIC","ENROLLMENT","ENCOUNTER","DIAGNOSIS","PROCEDURES","HARVEST"];
-const requiredEhr = ["LAB_RESULT_CM","PRESCRIBING","VITAL"];
+const coreRequired = ["DEMOGRAPHIC","ENROLLMENT","ENCOUNTER","DIAGNOSIS","PROCEDURES","HARVEST"];
+const ehrRequired = ["LAB_RESULT_CM","PRESCRIBING","VITAL"];
+const allChecked = coreRequired.concat(ehrRequired);
 const ehrFlag = harvestSuggestsEhr(DB_PARAM, SCHEMA_NAME); // true/false/null
 const enforceEhr = (ehrFlag === true);
-let tables = requiredAll.slice();
-if (enforceEhr) tables = tables.concat(requiredEhr);
+let tables = allChecked.slice();
 if (only !== "ALL") {
-  if (!requiredAll.includes(only) && !requiredEhr.includes(only) && only !== "HARVEST") {
+  if (!allChecked.includes(only)) {
     throw new Error(`Invalid TARGET_TABLE=''${TARGET_TABLE}''. Use ALL or a CDM table name.`);
   }
   tables = [only];
@@ -129,22 +125,25 @@ for (const t of tables) {
     // metadata missing: fallback to COUNT(*)
     nobs = Number(scalar(`SELECT COUNT(*) FROM ${DB_PARAM}.${SCHEMA_NAME}.${t}`));
   }
+  const isCore = coreRequired.includes(t);
+  const isEhr = ehrRequired.includes(t);
+  const tier = isCore ? "CORE" : "EHR";
   const emptyFlag = (m.exists && nobs === 0) ? 1 : 0;
   const missingTableFlag = (!m.exists) ? 1 : 0;
-  // For 1.02 we flag exception if required table is missing OR exists but empty
-  const exception = (missingTableFlag === 1) || (emptyFlag === 1);
+  // Exception if core table is missing/empty, or EHR table is missing/empty when EHR is inferred
+  const exception = (missingTableFlag === 1 || emptyFlag === 1) && (isCore || (isEhr && enforceEhr));
   const details = JSON.stringify({
     table_exists: m.exists,
     nobs: nobs,
     row_count_metadata: m.row_count,
-    required_tier: requiredAll.includes(t) ? "ALL" : (requiredEhr.includes(t) ? "EHR" : "UNKNOWN"),
+    required_tier: tier,
     ehr_inferred: ehrFlag
   });
   const base = [RUN_ID, reg.checkId, reg.checkName, rowNum, reg.edcTable, t];
   insertMetric(resultsTbl, base, "TABLE_EXISTS_FLAG", m.exists ? 1 : 0, m.exists ? "1" : "0", false, details);
   insertMetric(resultsTbl, base, "NOBS", nobs, String(nobs), false, details);
-  insertMetric(resultsTbl, base, "EMPTY_REQUIRED_TABLE_FLAG", emptyFlag, String(emptyFlag), (emptyFlag === 1), details);
-  insertMetric(resultsTbl, base, "MISSING_REQUIRED_TABLE_FLAG", missingTableFlag, String(missingTableFlag), (missingTableFlag === 1), details);
+  insertMetric(resultsTbl, base, "EMPTY_REQUIRED_TABLE_FLAG", emptyFlag, String(emptyFlag), (emptyFlag === 1 && (isCore || (isEhr && enforceEhr))), details);
+  insertMetric(resultsTbl, base, "MISSING_REQUIRED_TABLE_FLAG", missingTableFlag, String(missingTableFlag), (missingTableFlag === 1 && (isCore || (isEhr && enforceEhr))), details);
 }
 return `DC 1.02 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only}`;
 ';
