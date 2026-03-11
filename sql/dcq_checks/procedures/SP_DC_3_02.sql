@@ -84,8 +84,9 @@ if (!tableExists(DB_PARAM, SCHEMA_NAME, "PROCEDURES") ||
   insertMetric(resultsTbl, base, "ALL", "STATUS", null, "ERROR", null, true, { message: "PROCEDURES missing required columns" });
   return `DC 3.02 ERROR: PROCEDURES missing`;
 }
-const vStartDate = (START_DATE || '''').toString().trim() || null;
-const vEndDate = (END_DATE || '''').toString().trim() || null;
+function normDateParam(x) { if (x === null || x === undefined) return null; var v = x.toString().trim(); var u = v.toUpperCase(); return (u === '''' || u === ''NONE'' || u === ''NULL'' || u === ''(NONE)'') ? null : v; }
+const vStartDate = normDateParam(START_DATE);
+const vEndDate = normDateParam(END_DATE);
 const tableDateCol = {
   ENCOUNTER: ''ADMIT_DATE'',
   PROCEDURES: ''PX_DATE''

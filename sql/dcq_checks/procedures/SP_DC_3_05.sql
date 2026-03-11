@@ -82,8 +82,9 @@ if (!tableExists(DB_PARAM, SCHEMA_NAME, "PROCEDURES") || !colExists(DB_PARAM, SC
   insertMetric(resultsTbl, base, "STATUS", null, "ERROR", thresholdPct, true, { message: "PROCEDURES or PROCEDURES.PATID missing" });
   return `DC 3.05 ERROR: PROCEDURES missing`;
 }
-const vStartDate = (START_DATE || '''').toString().trim() || null;
-const vEndDate = (END_DATE || '''').toString().trim() || null;
+function normDateParam(x) { if (x === null || x === undefined) return null; var v = x.toString().trim(); var u = v.toUpperCase(); return (u === '''' || u === ''NONE'' || u === ''NULL'' || u === ''(NONE)'') ? null : v; }
+const vStartDate = normDateParam(START_DATE);
+const vEndDate = normDateParam(END_DATE);
 const tableDateCol = {
   ENCOUNTER: ''ADMIT_DATE'',
   PROCEDURES: ''PX_DATE''
