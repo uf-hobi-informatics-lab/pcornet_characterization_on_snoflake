@@ -32,7 +32,10 @@ function normTargetTable(x) {
 function normOptIdent(x) {
   if (x === null || x === undefined) return null;
   const v = x.toString().trim();
-  return v.length ? v.toUpperCase() : null;
+  if (!v.length) return null;
+  const u = v.toUpperCase();
+  if (u === ''NONE'' || u === ''NULL'' || u === ''(NONE)'') return null;
+  return u;
 }
 function parseSelector(sel) {
   if (!sel) return [];

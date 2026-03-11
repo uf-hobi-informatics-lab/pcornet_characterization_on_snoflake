@@ -555,6 +555,10 @@ with tab_dcq:
                 end_date_str,
                 str(max_parallel),
             ]
+            # Snowpark converts Python None to the string "None" rather than
+            # SQL NULL.  Coerce any None values to empty strings so that the
+            # stored procedures see '' and treat it the same as NULL.
+            params = [p if p is not None else "" for p in params]
 
             if show_debug:
                 st.write("DEBUG params:", params)
@@ -602,11 +606,11 @@ with tab_dcq:
                     if max_args >= 4:
                         args.append(setup_json.get("targetTable") or "ALL")
                     if max_args >= 6:
-                        args.append(setup_json.get("prevDb"))
-                        args.append(setup_json.get("prevSchema"))
+                        args.append(setup_json.get("prevDb") or "")
+                        args.append(setup_json.get("prevSchema") or "")
                     if max_args >= 8:
-                        args.append(setup_json.get("startDate"))
-                        args.append(setup_json.get("endDate"))
+                        args.append(setup_json.get("startDate") or "")
+                        args.append(setup_json.get("endDate") or "")
                     return proc, args
 
                 # Step 3: Execute checks in parallel using ThreadPoolExecutor

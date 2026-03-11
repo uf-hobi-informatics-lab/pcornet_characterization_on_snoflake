@@ -36,8 +36,9 @@ function insertMetric(resultsTbl, baseBinds, metric, valueNum, valueStr, excepti
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
 if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA_NAME}`);
-const vStartDate = (START_DATE || '''').toString().trim() || null;
-const vEndDate = (END_DATE || '''').toString().trim() || null;
+function normDateParam(x) { if (x === null || x === undefined) return null; var v = x.toString().trim(); var u = v.toUpperCase(); return (u === '''' || u === ''NONE'' || u === ''NULL'' || u === ''(NONE)'') ? null : v; }
+const vStartDate = normDateParam(START_DATE);
+const vEndDate = normDateParam(END_DATE);
 const tableDateCol = {
   CONDITION: ''REPORT_DATE'',
   DIAGNOSIS: ''DX_DATE'',
