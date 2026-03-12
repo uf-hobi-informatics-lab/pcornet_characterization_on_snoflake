@@ -395,28 +395,27 @@ with st.expander("How to run this app"):
 # ---------------------------------------------------------------------------
 with st.expander("DCQ Check Registry"):
     try:
+        reg_cols = "ROW_NUM_STR AS ROW_NUM, PART, EDC_TABLE, DESCRIPTION, PROC_NAME, SOURCE_TABLES, ENABLED"
         if backend == "snowpark":
             sess = backend_obj
             try:
                 df = sess.sql(
-                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY CHECK_NUM, CHECK_NAME"
+                    f"SELECT CHECK_NUM AS ROW_NUM, PART, EDC_TABLE, DESCRIPTION, PROC_NAME, SOURCE_TABLES, ENABLED FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY CHECK_NUM"
                 ).to_pandas()
             except Exception:
                 df = sess.sql(
-                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY ROW_NUM, CHECK_NAME"
+                    f"SELECT {reg_cols} FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY ROW_NUM"
                 ).to_pandas()
 
-            if "ROW_NUM" in df.columns and "CHECK_NUM" not in df.columns:
-                df = df.rename(columns={"ROW_NUM": "CHECK_NUM"})
             st.dataframe(df)
         else:
             try:
                 rows = run_query(
-                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY CHECK_NUM, CHECK_NAME"
+                    f"SELECT CHECK_NUM AS ROW_NUM, PART, EDC_TABLE, DESCRIPTION, PROC_NAME, SOURCE_TABLES, ENABLED FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY CHECK_NUM"
                 )
             except Exception:
                 rows = run_query(
-                    "SELECT * FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY ROW_NUM, CHECK_NAME"
+                    f"SELECT {reg_cols} FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY ORDER BY ROW_NUM"
                 )
             st.dataframe(rows)
     except Exception as e:
@@ -463,7 +462,7 @@ tab_dcq, tab_pce, tab_other = st.tabs(["SP_RUN_DCQ", "POTENTIAL_CODE_ERRORS", "O
 with tab_dcq:
     st.subheader("CHARACTERIZATION.DCQ.SP_RUN_DCQ")
 
-    mode = st.selectbox("MODE", options=["ALL", "CHECK_NAME", "CHECK_NUM", "SOURCE_TABLE"], index=0)
+    mode = st.selectbox("MODE", options=["ALL", "CHECK_NUM", "SOURCE_TABLE"], index=0)
     selector = st.text_input("SELECTOR", "", help="Comma-separated values used when MODE is not ALL.")
     part = st.text_input("PART", value="all")
     target_table = st.text_input("TARGET_TABLE (optional)", "", help="Blank defaults to ALL.")
