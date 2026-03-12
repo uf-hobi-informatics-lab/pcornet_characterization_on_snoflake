@@ -28,6 +28,8 @@ function colExists(db, schema, table, col) {
 function insertMetric(resultsTbl, baseBinds, sourceTable, codeType, metric, valueNum, valueStr, thresholdNum, exceptionFlag, detailsObj) {
   const flagInt = exceptionFlag ? 1 : 0;
   const detailsJson = JSON.stringify(detailsObj || {});
+  // Coerce valueNum to string for bind to avoid JS float→NUMBER(38,10) precision issues
+  const numStr = (valueNum === null || valueNum === undefined) ? null : String(valueNum);
   q(
     `INSERT INTO ${resultsTbl} (
       RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, EDC_TABLE,
@@ -36,10 +38,10 @@ function insertMetric(resultsTbl, baseBinds, sourceTable, codeType, metric, valu
     )
     SELECT
       ?, ?, ?, ?, ?,
-      ?, ?, ?, ?, ?,
+      ?, ?, ?, TRY_TO_NUMBER(?, 38, 10), ?,
       ?, IFF(?=1, TRUE, FALSE), PARSE_JSON(?)
     `,
-    baseBinds.concat([sourceTable, codeType, metric, valueNum, valueStr, thresholdNum, flagInt, detailsJson])
+    baseBinds.concat([sourceTable, codeType, metric, numStr, valueStr, thresholdNum, flagInt, detailsJson])
   );
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);

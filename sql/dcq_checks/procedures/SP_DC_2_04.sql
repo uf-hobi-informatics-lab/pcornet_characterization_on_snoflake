@@ -28,6 +28,7 @@ function colExists(db, schema, table, col) {
 function insertMetric(resultsTbl, baseBinds, codeType, metric, valueNum, valueStr, thresholdNum, exceptionFlag, detailsObj) {
   const flagInt = exceptionFlag ? 1 : 0;
   const detailsJson = JSON.stringify(detailsObj || {});
+  const numStr = (valueNum === null || valueNum === undefined) ? null : String(valueNum);
   q(
     `INSERT INTO ${resultsTbl} (
       RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, EDC_TABLE,
@@ -36,10 +37,10 @@ function insertMetric(resultsTbl, baseBinds, codeType, metric, valueNum, valueSt
     )
     SELECT
       ?, ?, ?, ?, ?,
-      ''ENCOUNTER'', ?, ?, ?, ?,
+      ''ENCOUNTER'', ?, ?, TRY_TO_NUMBER(?, 38, 10), ?,
       ?, IFF(?=1, TRUE, FALSE), PARSE_JSON(?)
     `,
-    baseBinds.concat([codeType, metric, valueNum, valueStr, thresholdNum, flagInt, detailsJson])
+    baseBinds.concat([codeType, metric, numStr, valueStr, thresholdNum, flagInt, detailsJson])
   );
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
@@ -47,32 +48,7 @@ if (!isSafeIdentPart(SCHEMA_NAME)) throw new Error(`Unsafe SCHEMA_NAME: ${SCHEMA
 function normDateParam(x) { if (x === null || x === undefined) return null; var v = x.toString().trim(); var u = v.toUpperCase(); return (u === '''' || u === ''NONE'' || u === ''NULL'' || u === ''(NONE)'') ? null : v; }
 const vStartDate = normDateParam(START_DATE);
 const vEndDate = normDateParam(END_DATE);
-const tableDateCol = {
-  CONDITION: ''REPORT_DATE'',
-  DEATH: ''DEATH_DATE'',
-  DEMOGRAPHIC: null,
-  DIAGNOSIS: ''DX_DATE'',
-  DISPENSING: ''DISPENSE_DATE'',
-  ENCOUNTER: ''ADMIT_DATE'',
-  ENROLLMENT: ''ENR_START_DATE'',
-  EXTERNAL_MEDS: ''EXT_RECORD_DATE'',
-  HARVEST: null,
-  HASH_TOKEN: null,
-  IMMUNIZATION: ''VX_RECORD_DATE'',
-  LAB_HISTORY: null,
-  LAB_RESULT_CM: ''RESULT_DATE'',
-  LDS_ADDRESS_HISTORY: null,
-  MED_ADMIN: ''MEDADMIN_START_DATE'',
-  OBS_CLIN: ''OBSCLIN_START_DATE'',
-  OBS_GEN: ''OBSGEN_START_DATE'',
-  PAT_RELATIONSHIP: null,
-  PCORNET_TRIAL: null,
-  PRESCRIBING: ''RX_ORDER_DATE'',
-  PROCEDURES: ''PX_DATE'',
-  PROVIDER: null,
-  PRO_CM: ''PRO_DATE'',
-  VITAL: ''MEASURE_DATE''
-};
+const tableDateCol = { ENCOUNTER: ''ADMIT_DATE'' };
 function dateFilterWhere(tbl) {
   const dc = tableDateCol[tbl] || null;
   if (!dc) return '''';
@@ -112,7 +88,7 @@ const base = [RUN_ID, checkId, checkName, rowNum, edcTable];
 q(`DELETE FROM ${resultsTbl} WHERE RUN_ID = ? AND ROW_NUM = ?`, [RUN_ID, rowNum]);
 if (!tableExists(DB_PARAM, SCHEMA_NAME, "ENCOUNTER")) {
   insertMetric(resultsTbl, base, "ALL", "STATUS", null, "ERROR", threshold, true, { message: "ENCOUNTER table missing" });
-  return `DC 2.04 ERROR: ENCOUNTER missing`;
+  return "DC 2.04 ERROR: ENCOUNTER missing";
 }
 for (const c of ["PATID","ENC_TYPE","ADMIT_DATE","PROVIDERID"]) {
   if (!colExists(DB_PARAM, SCHEMA_NAME, "ENCOUNTER", c)) {
@@ -121,77 +97,88 @@ for (const c of ["PATID","ENC_TYPE","ADMIT_DATE","PROVIDERID"]) {
   }
 }
 const fullEnc = `${DB_PARAM}.${SCHEMA_NAME}.ENCOUNTER`;
+
+// Compute all metrics per ENC_TYPE in a single query
 const rs = q(
-  `
-  WITH types AS (
-    SELECT column1 AS enc_type
-    FROM VALUES (''IP''), (''ED''), (''EI'')
-  ),
-  src0 AS (
-    SELECT
-      ENC_TYPE,
-      PATID,
-      TRY_TO_DATE(ADMIT_DATE) AS admit_date,
-      PROVIDERID
-    FROM ${fullEnc}
-    WHERE ENC_TYPE IN (''IP'',''ED'',''EI'')${dateFilterWhere(''ENCOUNTER'')}
-  ),
-  totals AS (
-    SELECT ENC_TYPE, COUNT(*) AS total_rows_n
-    FROM src0
-    GROUP BY ENC_TYPE
-  ),
-  eligible AS (
-    SELECT *
-    FROM src0
-    WHERE PATID IS NOT NULL
-      AND admit_date IS NOT NULL
-      AND PROVIDERID IS NOT NULL
-  ),
-  per_type AS (
-    SELECT
-      ENC_TYPE,
-      COUNT(*) AS encounter_records_n,
-      COUNT(DISTINCT (PATID || ''|'' || ENC_TYPE || ''|'' || TO_CHAR(admit_date,''YYYY-MM-DD'') || ''|'' || PROVIDERID)) AS visit_distinct_n
-    FROM eligible
-    GROUP BY ENC_TYPE
-  )
-  SELECT
-    t.enc_type,
-    COALESCE(x.total_rows_n, 0) AS total_rows_n,
-    COALESCE(p.encounter_records_n, 0) AS encounter_records_n,
-    COALESCE(p.visit_distinct_n, 0) AS visit_distinct_n,
-    IFF(COALESCE(p.visit_distinct_n,0) > 0,
-        COALESCE(p.encounter_records_n,0)::FLOAT / COALESCE(p.visit_distinct_n,0)::FLOAT,
-        NULL
-    ) AS encounters_per_visit_avg
-  FROM types t
-  LEFT JOIN totals x ON x.enc_type = t.enc_type
-  LEFT JOIN per_type p ON p.enc_type = t.enc_type
-  ORDER BY t.enc_type
-  `
+  `WITH src AS (
+     SELECT
+       UPPER(TRIM(ENC_TYPE)) AS enc_type,
+       PATID,
+       TRY_TO_DATE(ADMIT_DATE) AS admit_date,
+       PROVIDERID
+     FROM ${fullEnc}
+     WHERE ENC_TYPE IS NOT NULL
+       AND TRIM(ENC_TYPE) <> ''''${dateFilterWhere(''ENCOUNTER'')}
+   ),
+   per_type AS (
+     SELECT
+       enc_type,
+       COUNT(*)                                           AS encounters_n,
+       COUNT(DISTINCT PATID)                              AS patients_n,
+       COUNT_IF(PROVIDERID IS NOT NULL
+                AND TRIM(PROVIDERID::STRING) <> '''')     AS enc_known_provider_n,
+       COUNT(DISTINCT
+         CASE WHEN PATID IS NOT NULL
+                   AND admit_date IS NOT NULL
+                   AND PROVIDERID IS NOT NULL
+                   AND TRIM(PROVIDERID::STRING) <> ''''
+              THEN PATID || ''|'' || enc_type || ''|'' || TO_CHAR(admit_date,''YYYY-MM-DD'') || ''|'' || PROVIDERID
+         END
+       )                                                  AS visit_distinct_n
+     FROM src
+     GROUP BY enc_type
+   )
+   SELECT
+     enc_type,
+     encounters_n,
+     patients_n,
+     IFF(patients_n > 0, encounters_n::DOUBLE / patients_n::DOUBLE, NULL)                    AS enc_per_patient,
+     enc_known_provider_n,
+     visit_distinct_n,
+     IFF(visit_distinct_n > 0, enc_known_provider_n::DOUBLE / visit_distinct_n::DOUBLE, NULL) AS enc_known_prov_per_visit
+   FROM per_type
+   ORDER BY enc_type`
 );
+
+let wrote = 0;
 while (rs.next()) {
-  const encType = rs.getColumnValue(1);
-  const totalRows = Number(rs.getColumnValue(2));
-  const recordsN = Number(rs.getColumnValue(3));
-  const visitsN = Number(rs.getColumnValue(4));
-  const avg = rs.getColumnValue(5) === null ? null : Number(rs.getColumnValue(5));
-  const flag = (avg !== null && avg > threshold) ? 1 : 0;
+  const encType         = rs.getColumnValue(1);
+  const encountersN     = Number(rs.getColumnValue(2));
+  const patientsN       = Number(rs.getColumnValue(3));
+  const encPerPatient   = rs.getColumnValue(4) === null ? null : Number(rs.getColumnValue(4));
+  const encKnownProvN   = Number(rs.getColumnValue(5));
+  const visitDistinctN  = Number(rs.getColumnValue(6));
+  const encProvPerVisit = rs.getColumnValue(7) === null ? null : Number(rs.getColumnValue(7));
+
+  const flag = (encProvPerVisit !== null && encProvPerVisit > threshold) ? 1 : 0;
+
   const details = {
     enc_type: encType,
-    total_rows_n: totalRows,
-    eligible_rows_n: recordsN,
-    excluded_rows_n: totalRows - recordsN,
-    visit_distinct_n: visitsN,
-    encounters_per_visit_avg: avg,
+    encounters_n: encountersN,
+    patients_n: patientsN,
+    enc_per_patient: encPerPatient,
+    enc_known_provider_n: encKnownProvN,
+    visit_distinct_n: visitDistinctN,
+    enc_known_prov_per_visit: encProvPerVisit,
     threshold: threshold,
-    visit_definition: "PATID+ENC_TYPE+ADMIT_DATE+PROVIDERID (ENCOUNTER table)"
+    visit_definition: "Unique combinations of PATID + ENC_TYPE + ADMIT_DATE + PROVIDERID"
   };
-  insertMetric(resultsTbl, base, encType, "ENCOUNTER_RECORDS_N", recordsN, String(recordsN), threshold, false, details);
-  insertMetric(resultsTbl, base, encType, "VISIT_DISTINCT_N", visitsN, String(visitsN), threshold, false, details);
-  insertMetric(resultsTbl, base, encType, "ENCOUNTERS_PER_VISIT_AVG", avg, avg === null ? "NULL" : String(avg), threshold, false, details);
-  insertMetric(resultsTbl, base, encType, "ENCOUNTERS_PER_VISIT_FLAG", flag, String(flag), threshold, (flag === 1), details);
+
+  insertMetric(resultsTbl, base, encType, "ENCOUNTERS_N",               encountersN,    String(encountersN),    threshold, false, details);
+  insertMetric(resultsTbl, base, encType, "PATIENTS_N",                 patientsN,      String(patientsN),      threshold, false, details);
+  insertMetric(resultsTbl, base, encType, "ENC_PER_PATIENT",            encPerPatient,  encPerPatient === null ? null : String(encPerPatient), threshold, false, details);
+  insertMetric(resultsTbl, base, encType, "ENC_KNOWN_PROVIDER_N",       encKnownProvN,  String(encKnownProvN),  threshold, false, details);
+  insertMetric(resultsTbl, base, encType, "VISIT_DISTINCT_N",           visitDistinctN, String(visitDistinctN), threshold, false, details);
+  insertMetric(resultsTbl, base, encType, "ENC_KNOWN_PROV_PER_VISIT",   encProvPerVisit, encProvPerVisit === null ? null : String(encProvPerVisit), threshold, false, details);
+  insertMetric(resultsTbl, base, encType, "ENC_KNOWN_PROV_PER_VISIT_FLAG", flag, String(flag), threshold, (flag === 1), details);
+  wrote += 1;
 }
-return `DC 2.04 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only}`;
+
+if (wrote === 0) {
+  insertMetric(resultsTbl, base, "ALL", "STATUS", null, "OK", threshold, false, { note: "No encounter types found" });
+} else {
+  insertMetric(resultsTbl, base, "ALL", "STATUS", null, "OK", threshold, false, { enc_types_evaluated: wrote });
+}
+
+return `DC 2.04 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only} enc_types=${wrote}`;
 ';

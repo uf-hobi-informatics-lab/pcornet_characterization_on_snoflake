@@ -786,12 +786,12 @@ with tab_dcq:
 
                     if backend == "snowpark":
                         results = run_query(
-                            f"SELECT * FROM {res_tbl} WHERE RUN_ID = ? ORDER BY CREATED_AT DESC LIMIT {int(limit)}",
+                            f"SELECT RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, EDC_TABLE, SOURCE_TABLE, CODE_TYPE, METRIC, VALUE_NUM::DOUBLE AS VALUE_NUM, VALUE_STR, THRESHOLD_NUM::DOUBLE AS THRESHOLD_NUM, EXCEPTION_FLAG, DETAILS, CREATED_AT FROM {res_tbl} WHERE RUN_ID = ? ORDER BY CREATED_AT DESC LIMIT {int(limit)}",
                             [run_id],
                         )
                     else:
                         results = run_query(
-                            f"SELECT * FROM {res_tbl} WHERE RUN_ID = %s ORDER BY CREATED_AT DESC LIMIT {int(limit)}",
+                            f"SELECT RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, EDC_TABLE, SOURCE_TABLE, CODE_TYPE, METRIC, VALUE_NUM::DOUBLE AS VALUE_NUM, VALUE_STR, THRESHOLD_NUM::DOUBLE AS THRESHOLD_NUM, EXCEPTION_FLAG, DETAILS, CREATED_AT FROM {res_tbl} WHERE RUN_ID = %s ORDER BY CREATED_AT DESC LIMIT {int(limit)}",
                             (run_id,),
                         )
                     st.dataframe(results)
