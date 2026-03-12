@@ -28,6 +28,7 @@ function colExists(db, schema, table, col) {
 function insertMetric(resultsTbl, baseBinds, codeType, metric, valueNum, valueStr, thresholdNum, exceptionFlag, detailsObj) {
   const flagInt = exceptionFlag ? 1 : 0;
   const detailsJson = JSON.stringify(detailsObj || {});
+  const numStr = (valueNum === null || valueNum === undefined) ? null : String(valueNum);
   q(
     `INSERT INTO ${resultsTbl} (
       RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, EDC_TABLE,
@@ -36,10 +37,10 @@ function insertMetric(resultsTbl, baseBinds, codeType, metric, valueNum, valueSt
     )
     SELECT
       ?, ?, ?, ?, ?,
-      ''DIAGNOSIS'', ?, ?, ?, ?,
+      ''DIAGNOSIS'', ?, ?, TRY_TO_NUMBER(?, 38, 10), ?,
       ?, IFF(?=1, TRUE, FALSE), PARSE_JSON(?)
     `,
-    baseBinds.concat([codeType, metric, valueNum, valueStr, thresholdNum, flagInt, detailsJson])
+    baseBinds.concat([codeType, metric, numStr, valueStr, thresholdNum, flagInt, detailsJson])
   );
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
@@ -59,7 +60,6 @@ q(`CREATE TABLE IF NOT EXISTS ${resultsTbl} (
   THRESHOLD_NUM NUMBER(38,10), EXCEPTION_FLAG BOOLEAN, DETAILS VARIANT,
   CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 )`);
-// registry constants
 const regRs = q(
   `SELECT CHECK_ID, CHECK_NAME, EDC_TABLE
    FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY
@@ -73,106 +73,132 @@ const checkName = regRs.getColumnValue(2);
 const edcTable = regRs.getColumnValue(3);
 const base = [RUN_ID, checkId, checkName, rowNum, edcTable];
 q(`DELETE FROM ${resultsTbl} WHERE RUN_ID = ? AND ROW_NUM = ?`, [RUN_ID, rowNum]);
-// prerequisites
+
 if (!tableExists(DB_PARAM, SCHEMA_NAME, "ENCOUNTER") ||
     !colExists(DB_PARAM, SCHEMA_NAME, "ENCOUNTER", "ENCOUNTERID") ||
     !colExists(DB_PARAM, SCHEMA_NAME, "ENCOUNTER", "ENC_TYPE")) {
   insertMetric(resultsTbl, base, "ALL", "STATUS", null, "ERROR", thresholdPct, true, { message: "ENCOUNTER missing required columns" });
-  return `DC 3.06 ERROR: ENCOUNTER missing`;
+  return "DC 3.06 ERROR: ENCOUNTER missing";
 }
 if (!tableExists(DB_PARAM, SCHEMA_NAME, "DIAGNOSIS") ||
     !colExists(DB_PARAM, SCHEMA_NAME, "DIAGNOSIS", "ENCOUNTERID") ||
     !colExists(DB_PARAM, SCHEMA_NAME, "DIAGNOSIS", "DX_ORIGIN") ||
     !colExists(DB_PARAM, SCHEMA_NAME, "DIAGNOSIS", "PDX")) {
   insertMetric(resultsTbl, base, "ALL", "STATUS", null, "ERROR", thresholdPct, true, { message: "DIAGNOSIS missing required columns" });
-  return `DC 3.06 ERROR: DIAGNOSIS missing`;
+  return "DC 3.06 ERROR: DIAGNOSIS missing";
 }
+
 function normDateParam(x) { if (x === null || x === undefined) return null; var v = x.toString().trim(); var u = v.toUpperCase(); return (u === '''' || u === ''NONE'' || u === ''NULL'' || u === ''(NONE)'') ? null : v; }
 const vStartDate = normDateParam(START_DATE);
 const vEndDate = normDateParam(END_DATE);
-const tableDateCol = {
-  ENCOUNTER: ''ADMIT_DATE'',
-  DIAGNOSIS: ''DX_DATE''
-};
-function dateFilterWhere(tbl) {
+const tableDateCol = { ENCOUNTER: ''ADMIT_DATE'', DIAGNOSIS: ''DX_DATE'' };
+function dateFilterWhere(tbl, alias) {
   const dc = tableDateCol[tbl] || null;
   if (!dc) return '''';
+  const col = alias ? `${alias}.${dc}` : dc;
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${col}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${col}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
+
 const enc = `${DB_PARAM}.${SCHEMA_NAME}.ENCOUNTER`;
 const dia = `${DB_PARAM}.${SCHEMA_NAME}.DIAGNOSIS`;
+
+// ENC_TYPEs per spec: EI, IP, IS, OS
+// DX_ORIGIN values: BI, CL, DR, OD
 const rs = q(
-  `
-  WITH enc_ip_ei AS (
-    SELECT ENCOUNTERID, ENC_TYPE
-    FROM ${enc}
-    WHERE ENCOUNTERID IS NOT NULL
-      AND ENC_TYPE IN (''IP'',''EI'')
-      ${dateFilterWhere(''ENCOUNTER'')}
-  ),
-  diag_known AS (
-    SELECT
-      d.ENCOUNTERID,
-      UPPER(TRIM(d.DX_ORIGIN)) AS dx_origin,
-      UPPER(TRIM(d.PDX)) AS pdx
-    FROM ${dia} d
-    JOIN enc_ip_ei e
-      ON d.ENCOUNTERID = e.ENCOUNTERID
-    WHERE d.ENCOUNTERID IS NOT NULL
-      AND d.DX_ORIGIN IS NOT NULL
-      AND TRIM(d.DX_ORIGIN) <> ''''
-      AND UPPER(TRIM(d.DX_ORIGIN)) NOT IN (''NI'',''UN'',''OT'')
-  ),
-  per_enc_origin AS (
-    SELECT
-      encounterid,
-      dx_origin,
-      MAX(IFF(pdx = ''P'', 1, 0)) AS has_pdx_for_origin
-    FROM diag_known
-    GROUP BY encounterid, dx_origin
-  ),
-  agg AS (
-    SELECT
-      dx_origin,
-      COUNT(*) AS encounters_with_known_origin_n,
-      SUM(IFF(has_pdx_for_origin=0, 1, 0)) AS encounters_missing_pdx_for_origin_n
-    FROM per_enc_origin
-    GROUP BY dx_origin
-  )
-  SELECT
-    dx_origin,
-    encounters_with_known_origin_n,
-    encounters_missing_pdx_for_origin_n,
-    IFF(encounters_with_known_origin_n > 0,
-        (encounters_missing_pdx_for_origin_n::FLOAT / encounters_with_known_origin_n::FLOAT) * 100,
-        0
-    ) AS missing_pdx_for_origin_pct
-  FROM agg
-  ORDER BY dx_origin
-  `
+  `WITH enc_base AS (
+     SELECT ENCOUNTERID, UPPER(TRIM(ENC_TYPE)) AS enc_type
+     FROM ${enc}
+     WHERE ENCOUNTERID IS NOT NULL
+       AND UPPER(TRIM(ENC_TYPE)) IN (''EI'',''IP'',''IS'',''OS'')${dateFilterWhere(''ENCOUNTER'')}
+   ),
+   dx_base AS (
+     SELECT
+       d.ENCOUNTERID,
+       e.enc_type,
+       UPPER(TRIM(d.DX_ORIGIN)) AS dx_origin,
+       UPPER(TRIM(d.PDX)) AS pdx
+     FROM ${dia} d
+     JOIN enc_base e ON d.ENCOUNTERID = e.ENCOUNTERID
+     WHERE d.ENCOUNTERID IS NOT NULL${dateFilterWhere(''DIAGNOSIS'', ''d'')}
+   ),
+   -- Cross join of enc_types and dx_origins to ensure all combos appear
+   type_origin AS (
+     SELECT t.enc_type, o.dx_origin
+     FROM (SELECT column1 AS enc_type FROM VALUES (''EI''),(''IP''),(''IS''),(''OS'')) t,
+          (SELECT column1 AS dx_origin FROM VALUES (''BI''),(''CL''),(''DR''),(''OD'')) o
+   ),
+   -- Per encounter+origin: does it have any PDX=P?
+   enc_origin AS (
+     SELECT
+       enc_type,
+       dx_origin,
+       ENCOUNTERID,
+       MAX(IFF(pdx = ''P'', 1, 0)) AS has_pdx,
+       COUNT_IF(pdx = ''P'')         AS pdx_count
+     FROM dx_base
+     GROUP BY enc_type, dx_origin, ENCOUNTERID
+   ),
+   agg AS (
+     SELECT
+       enc_type,
+       dx_origin,
+       COUNT(*)                           AS enc_with_origin_n,
+       COUNT_IF(has_pdx = 1)              AS enc_with_pdx_n,
+       COUNT_IF(has_pdx = 0)              AS enc_without_pdx_n,
+       SUM(pdx_count)                     AS pdx_total_n
+     FROM enc_origin
+     GROUP BY enc_type, dx_origin
+   )
+   SELECT
+     t.enc_type,
+     t.dx_origin,
+     COALESCE(a.enc_with_pdx_n, 0)        AS enc_with_pdx_n,
+     COALESCE(a.enc_without_pdx_n, 0)     AS enc_without_pdx_n,
+     COALESCE(a.enc_with_origin_n, 0)     AS enc_with_origin_n,
+     COALESCE(a.pdx_total_n, 0)           AS pdx_total_n
+   FROM type_origin t
+   LEFT JOIN agg a ON a.enc_type = t.enc_type AND a.dx_origin = t.dx_origin
+   ORDER BY t.enc_type, t.dx_origin`
 );
+
+let wrote = 0;
 while (rs.next()) {
-  const origin = rs.getColumnValue(1);
-  const denom = Number(rs.getColumnValue(2));
-  const numer = Number(rs.getColumnValue(3));
-  const pct = Number(rs.getColumnValue(4));
-  const flag = (denom > 0 && pct > thresholdPct) ? 1 : 0;
+  const encType       = rs.getColumnValue(1);
+  const dxOrigin      = rs.getColumnValue(2);
+  const encWithPdx    = Number(rs.getColumnValue(3));
+  const encWithoutPdx = Number(rs.getColumnValue(4));
+  const encTotal      = Number(rs.getColumnValue(5));
+  const pdxTotalN     = Number(rs.getColumnValue(6));
+
+  const pctWithoutPdx = (encTotal > 0) ? (encWithoutPdx / encTotal) * 100 : 0;
+  const pdxPerEnc     = (encWithPdx > 0) ? pdxTotalN / encWithPdx : null;
+  const flag          = (encTotal > 0 && pctWithoutPdx > thresholdPct) ? 1 : 0;
+
+  const codeType = `${encType}:${dxOrigin}`;
   const details = {
-    enc_types: ["IP","EI"],
-    dx_origin: origin,
-    encounters_with_known_origin_n: denom,
-    encounters_missing_pdx_for_origin_n: numer,
-    missing_pdx_for_origin_pct: pct,
+    enc_type: encType,
+    dx_origin: dxOrigin,
+    enc_with_pdx_n: encWithPdx,
+    enc_without_pdx_n: encWithoutPdx,
+    pct_without_pdx: pctWithoutPdx,
+    pdx_total_n: pdxTotalN,
+    pdx_per_enc_with_pdx: pdxPerEnc,
     threshold_pct_gt: thresholdPct,
-    definition: "Encounter+DX_ORIGIN has no DIAGNOSIS row with PDX=''P''"
+    source_tables: ["DIA_L3_PDX_ENCTYPE","DIA_L3_PDXGRP_ENCTYPE"]
   };
-  insertMetric(resultsTbl, base, origin, "ENCOUNTERS_WITH_KNOWN_ORIGIN_N", denom, String(denom), thresholdPct, false, details);
-  insertMetric(resultsTbl, base, origin, "ENCOUNTERS_MISSING_PDX_FOR_ORIGIN_N", numer, String(numer), thresholdPct, false, details);
-  insertMetric(resultsTbl, base, origin, "MISSING_PDX_FOR_ORIGIN_PCT", pct, String(pct), thresholdPct, false, details);
-  insertMetric(resultsTbl, base, origin, "MISSING_PDX_FOR_ORIGIN_FLAG", flag, String(flag), thresholdPct, (flag === 1), details);
+
+  insertMetric(resultsTbl, base, codeType, "ENC_WITH_PDX_N",          encWithPdx,    String(encWithPdx),    thresholdPct, false, details);
+  insertMetric(resultsTbl, base, codeType, "ENC_WITHOUT_PDX_N",       encWithoutPdx, String(encWithoutPdx), thresholdPct, false, details);
+  insertMetric(resultsTbl, base, codeType, "PCT_WITHOUT_PDX",         pctWithoutPdx, String(pctWithoutPdx), thresholdPct, false, details);
+  insertMetric(resultsTbl, base, codeType, "PDX_TOTAL_N",             pdxTotalN,     String(pdxTotalN),     thresholdPct, false, details);
+  insertMetric(resultsTbl, base, codeType, "PDX_PER_ENC_WITH_PDX",    pdxPerEnc,     pdxPerEnc === null ? null : String(pdxPerEnc), thresholdPct, false, details);
+  insertMetric(resultsTbl, base, codeType, "PCT_WITHOUT_PDX_FLAG",    flag,          String(flag),          thresholdPct, (flag === 1), details);
+  wrote += 1;
 }
-return `DC 3.06 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only}`;
+
+insertMetric(resultsTbl, base, "ALL", "STATUS", null, "OK", thresholdPct, false, { combinations_evaluated: wrote });
+return `DC 3.06 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only} combos=${wrote}`;
 ';
