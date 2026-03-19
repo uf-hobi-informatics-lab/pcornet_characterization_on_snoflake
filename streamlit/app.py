@@ -255,7 +255,7 @@ def run_async_call(call_sql: str, params: list, db_param: str, show_debug: bool 
 
 
 @st.cache_data(ttl=60)
-def fetch_databases(prefixes: tuple[str, ...]) -> list[str]:
+def fetch_databases(prefixes: tuple[str, ...] = ()) -> list[str]:
     rows = run_query("SHOW DATABASES")
     out: list[str] = []
     for r in rows:
@@ -267,7 +267,7 @@ def fetch_databases(prefixes: tuple[str, ...]) -> list[str]:
             except Exception:
                 name = getattr(r, "name", "")
         name_u = str(name).upper()
-        if any(name_u.startswith(p) for p in prefixes):
+        if not prefixes or any(name_u.startswith(p) for p in prefixes):
             out.append(name_u)
     return sorted(set(out))
 
@@ -292,7 +292,7 @@ def fetch_schemas(database: str) -> list[str]:
 
 
 @st.cache_data(ttl=60)
-def fetch_warehouses(prefix: str = "CHARACTERIZATION_") -> list[str]:
+def fetch_warehouses(prefix: str = "") -> list[str]:
     rows = run_query("SHOW WAREHOUSES")
     out: list[str] = []
     for r in rows:
@@ -304,7 +304,7 @@ def fetch_warehouses(prefix: str = "CHARACTERIZATION_") -> list[str]:
             except Exception:
                 name = getattr(r, "name", "")
         name_u = str(name).upper()
-        if name_u and name_u.startswith(prefix.upper()):
+        if name_u and (not prefix or name_u.startswith(prefix.upper())):
             out.append(name_u)
     return sorted(set(out))
 
@@ -353,7 +353,7 @@ with st.expander("How to run this app"):
 
         Steps
         1. Select the target
-           - `DB_PARAM`: target database (expected `CHAR_` or `STAGE_`)
+           - `DB_PARAM`: target database
            - `SCHEMA_NAME`: schema within `DB_PARAM` that the checks should evaluate
 
         2. Choose which checks to run
@@ -422,9 +422,9 @@ with st.expander("DCQ Check Registry"):
         st.error(f"Failed to fetch DCQ_CHECK_REGISTRY: {e}")
 
 
-db_options = fetch_databases(("CHAR_", "STAGE_", "PROD_"))
+db_options = fetch_databases()
 if not db_options:
-    st.error("No target databases found (expected CHAR_/STAGE_/PROD_ prefixes).")
+    st.error("No databases found. Check your connection and permissions.")
     st.stop()
 
 db_param = st.selectbox("DB_PARAM (target database)", options=db_options, index=0)
@@ -438,8 +438,8 @@ schema_name = st.selectbox(
     index=schema_options.index("PUBLIC") if "PUBLIC" in schema_options else 0,
 )
 
-wh_options = fetch_warehouses("CHARACTERIZATION_")
-default_wh = "CHARACTERIZATION_XS"
+wh_options = fetch_warehouses()
+default_wh = ""
 wh_default_idx = 0
 if default_wh in wh_options:
     wh_default_idx = wh_options.index(default_wh) + 1
@@ -467,7 +467,7 @@ with tab_dcq:
     part = st.text_input("PART", value="all")
     target_table = st.text_input("TARGET_TABLE (optional)", "", help="Blank defaults to ALL.")
 
-    prod_db_options = fetch_databases(("PROD_",))
+    prod_db_options = fetch_databases()
 
     def _on_prev_db_change() -> None:
         st.session_state.pop("prev_schema", None)
@@ -476,7 +476,7 @@ with tab_dcq:
         "PREV_DB_PARAM (optional)",
         options=[""] + prod_db_options,
         format_func=lambda x: x if x else "(None)",
-        help="Previous DB parameter (PROD_ databases only).",
+        help="Previous DB parameter for comparison checks.",
         key="prev_db",
         on_change=_on_prev_db_change,
     )
