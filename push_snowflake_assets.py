@@ -266,7 +266,10 @@ def load_json_data(cs):
                 elif 'ARRAY' in dt:
                     select_parts.append(f'$1:{name}::ARRAY')
                 else:
-                    select_parts.append(f'$1:{name}::VARCHAR')
+                    if name.upper() == 'SOURCE':
+                        select_parts.append("COALESCE($1:partner, $1:SOURCE)::VARCHAR")
+                    else:
+                        select_parts.append(f'$1:{name}::VARCHAR')
 
             # Upload to stage
             raw_cs.execute(f"PUT file://{path} @data_load_stage/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE")
