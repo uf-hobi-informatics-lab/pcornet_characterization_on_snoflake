@@ -353,7 +353,7 @@ with st.expander("How to run this app"):
 
         Steps
         1. Select the target
-           - `DB_PARAM`: target database
+           - `DB_PARAM`: target database (expected `CHAR_` or `STAGE_`)
            - `SCHEMA_NAME`: schema within `DB_PARAM` that the checks should evaluate
 
         2. Choose which checks to run
@@ -422,9 +422,9 @@ with st.expander("DCQ Check Registry"):
         st.error(f"Failed to fetch DCQ_CHECK_REGISTRY: {e}")
 
 
-db_options = fetch_databases()
+db_options = fetch_databases(("CHAR_", "STAGE_", "PROD_"))
 if not db_options:
-    st.error("No databases found. Check your connection and permissions.")
+    st.error("No target databases found (expected CHAR_/STAGE_/PROD_ prefixes).")
     st.stop()
 
 db_param = st.selectbox("DB_PARAM (target database)", options=db_options, index=0)
@@ -438,8 +438,8 @@ schema_name = st.selectbox(
     index=schema_options.index("PUBLIC") if "PUBLIC" in schema_options else 0,
 )
 
-wh_options = fetch_warehouses()
-default_wh = ""
+wh_options = fetch_warehouses("CHARACTERIZATION_")
+default_wh = "CHARACTERIZATION_XS"
 wh_default_idx = 0
 if default_wh in wh_options:
     wh_default_idx = wh_options.index(default_wh) + 1
@@ -456,7 +456,7 @@ if show_debug:
     st.write("DEBUG warehouse options:", wh_options)
 
 
-tab_dcq, tab_pce, tab_other = st.tabs(["SP_RUN_DCQ", "POTENTIAL_CODE_ERRORS", "Other procedures"])
+tab_dcq, tab_pce, tab_results = st.tabs(["SP_RUN_DCQ", "POTENTIAL_CODE_ERRORS", "Results Viewer"])
 
 
 with tab_dcq:
@@ -467,7 +467,7 @@ with tab_dcq:
     part = st.text_input("PART", value="all")
     target_table = st.text_input("TARGET_TABLE (optional)", "", help="Blank defaults to ALL.")
 
-    prod_db_options = fetch_databases()
+    prod_db_options = fetch_databases(("PROD_",))
 
     def _on_prev_db_change() -> None:
         st.session_state.pop("prev_schema", None)
@@ -476,7 +476,7 @@ with tab_dcq:
         "PREV_DB_PARAM (optional)",
         options=[""] + prod_db_options,
         format_func=lambda x: x if x else "(None)",
-        help="Previous DB parameter for comparison checks.",
+        help="Previous DB parameter (PROD_ databases only).",
         key="prev_db",
         on_change=_on_prev_db_change,
     )
@@ -851,52 +851,168 @@ with tab_pce:
                 st.error(f"Error: {e}")
 
 
-with tab_other:
-    st.subheader("Browse and run other procedures")
+with tab_results:
+    st.subheader("Results Viewer")
+    st.caption("Browse DCQ check results with flattened details.")
 
-    if backend == "connector":
-        _conn, _DictCursor, database, schema = backend_obj
+    # --- DB selector (reuse db_options from main page) ---
+    rv_db = st.selectbox("Database", options=db_options, index=0, key="rv_db")
+
+    # --- Fetch recent runs ---
+    rv_runs_tbl = f"{rv_db}.CHARACTERIZATION_DCQ.DCQ_RUNS"
+    rv_res_tbl = f"{rv_db}.CHARACTERIZATION_DCQ.DCQ_RESULTS"
+    try:
+        if backend == "snowpark":
+            rv_runs = run_query(
+                f"SELECT RUN_ID, STATUS, STARTED_AT, ENDED_AT FROM {rv_runs_tbl} ORDER BY STARTED_AT DESC LIMIT 20"
+            )
+        else:
+            rv_runs = run_query(
+                f"SELECT RUN_ID, STATUS, STARTED_AT, ENDED_AT FROM {rv_runs_tbl} ORDER BY STARTED_AT DESC LIMIT 20"
+            )
+    except Exception:
+        rv_runs = []
+
+    if not rv_runs:
+        st.info(f"No runs found in `{rv_runs_tbl}`.")
     else:
-        database = "CHARACTERIZATION"
-        schema = "DCQ"
+        # Build run options
+        rv_run_options = []
+        for r in rv_runs:
+            rid = _row_get(r, ["RUN_ID", "run_id"], idx=0)
+            status = _row_get(r, ["STATUS", "status"], idx=1)
+            started = _row_get(r, ["STARTED_AT", "started_at"], idx=2)
+            rv_run_options.append(f"{rid}  ({status}, {started})")
 
-    procedures = run_query(f"SHOW PROCEDURES IN SCHEMA {database}.{schema}")
-    if not procedures:
-        st.info("No stored procedures found.")
-        st.stop()
+        rv_selected_run = st.selectbox("Run", options=rv_run_options, index=0, key="rv_run")
+        rv_run_id = rv_selected_run.split("  (")[0].strip()
 
-    proc_options: list[str] = []
-    proc_meta: dict[str, dict] = {}
-    for proc in procedures:
-        name = _row_get(proc, ["name"], idx=1)
-        args = _row_get(proc, ["arguments"], idx=None) or ""
-        identifier = f"{name}({args})" if args else str(name)
-        proc_options.append(identifier)
-        proc_meta[identifier] = _row_to_dict(proc)
+        # --- Fetch available checks for this run ---
+        try:
+            if backend == "snowpark":
+                rv_checks = run_query(
+                    f"SELECT DISTINCT ROW_NUM, CHECK_NAME FROM {rv_res_tbl} WHERE RUN_ID = ? ORDER BY ROW_NUM",
+                    [rv_run_id],
+                )
+            else:
+                rv_checks = run_query(
+                    f"SELECT DISTINCT ROW_NUM, CHECK_NAME FROM {rv_res_tbl} WHERE RUN_ID = %s ORDER BY ROW_NUM",
+                    (rv_run_id,),
+                )
+        except Exception:
+            rv_checks = []
 
-    selected = st.selectbox("Select a stored procedure", proc_options)
-    metadata = proc_meta[selected]
-    args_signature = metadata.get("arguments") or metadata.get("ARGUMENTS") or ""
-    st.write(f"Signature: `{selected}`")
+        if not rv_checks:
+            st.info("No results found for this run.")
+        else:
+            rv_check_options = ["ALL"]
+            for c in rv_checks:
+                rn = _row_get(c, ["ROW_NUM", "row_num"], idx=0)
+                cn = _row_get(c, ["CHECK_NAME", "check_name"], idx=1)
+                rv_check_options.append(f"{rn} - {cn}")
 
-    if args_signature:
-        arg_input = st.text_input("Arguments (comma-separated, as SQL literals)", "")
-    else:
-        arg_input = ""
+            rv_selected_check = st.selectbox("Check", options=rv_check_options, index=0, key="rv_check")
 
-    if st.button("Run selected procedure"):
-        with st.spinner("Executing..."):
+            # --- Build and run the query ---
+            if rv_selected_check == "ALL":
+                where_check = ""
+                bind_vals = [rv_run_id] if backend == "snowpark" else (rv_run_id,)
+            else:
+                rv_row_num = rv_selected_check.split(" - ")[0].strip()
+                where_check = " AND ROW_NUM = " + ("?" if backend == "snowpark" else "%s")
+                bind_vals = [rv_run_id, float(rv_row_num)] if backend == "snowpark" else (rv_run_id, float(rv_row_num))
+
+            ph = "?" if backend == "snowpark" else "%s"
+            rv_sql = (
+                f"SELECT ROW_NUM, CHECK_NAME, SOURCE_TABLE, CODE_TYPE, METRIC, "
+                f"VALUE_NUM::DOUBLE AS VALUE_NUM, VALUE_STR, "
+                f"THRESHOLD_NUM::DOUBLE AS THRESHOLD_NUM, EXCEPTION_FLAG, DETAILS "
+                f"FROM {rv_res_tbl} WHERE RUN_ID = {ph}{where_check} "
+                f"ORDER BY ROW_NUM, SOURCE_TABLE, CODE_TYPE, METRIC"
+            )
+
             try:
-                use_warehouse(warehouse)
-                call_sql = f"CALL {selected}"
-                if args_signature:
-                    call_sql += f"({arg_input})"
-                else:
-                    call_sql += "()"
-                rows = run_query(call_sql)
-                st.success("Procedure executed successfully.")
-                if rows:
-                    st.write("Result:")
-                    st.dataframe(rows)
+                rv_rows = run_query(rv_sql, bind_vals)
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Query failed: {e}")
+                rv_rows = []
+
+            if rv_rows:
+                import pandas as pd
+                import json as _json
+
+                # Convert to DataFrame
+                if hasattr(rv_rows[0], "asDict"):
+                    rv_df = pd.DataFrame([r.asDict() for r in rv_rows])
+                elif isinstance(rv_rows[0], dict):
+                    rv_df = pd.DataFrame(rv_rows)
+                else:
+                    cols = ["ROW_NUM", "CHECK_NAME", "SOURCE_TABLE", "CODE_TYPE",
+                            "METRIC", "VALUE_NUM", "VALUE_STR", "THRESHOLD_NUM",
+                            "EXCEPTION_FLAG", "DETAILS"]
+                    rv_df = pd.DataFrame(rv_rows, columns=cols)
+
+                # Normalize column names to uppercase
+                rv_df.columns = [c.upper() for c in rv_df.columns]
+
+                # --- Pivot view: rows = SOURCE_TABLE + CODE_TYPE, columns = METRIC ---
+                st.markdown("#### Pivot View")
+                st.caption("Metrics as columns, grouped by SOURCE_TABLE and CODE_TYPE.")
+
+                try:
+                    pivot_df = rv_df.pivot_table(
+                        index=["ROW_NUM", "CHECK_NAME", "SOURCE_TABLE", "CODE_TYPE"],
+                        columns="METRIC",
+                        values="VALUE_NUM",
+                        aggfunc="first",
+                    ).reset_index()
+                    pivot_df.columns.name = None
+                    st.dataframe(pivot_df, use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not pivot: {e}")
+
+                # --- Flattened details view ---
+                st.markdown("#### Detail View")
+                st.caption("Core columns with DETAILS JSON flattened into separate columns.")
+
+                try:
+                    details_col = rv_df["DETAILS"].copy()
+                    parsed = []
+                    for val in details_col:
+                        if val is None or pd.isna(val):
+                            parsed.append({})
+                        elif isinstance(val, dict):
+                            parsed.append(val)
+                        elif isinstance(val, str):
+                            try:
+                                parsed.append(_json.loads(val))
+                            except Exception:
+                                parsed.append({})
+                        else:
+                            try:
+                                parsed.append(dict(val))
+                            except Exception:
+                                parsed.append({})
+
+                    details_df = pd.json_normalize(parsed)
+                    if not details_df.empty:
+                        core_cols = [c for c in ["ROW_NUM", "CHECK_NAME", "SOURCE_TABLE",
+                                                  "CODE_TYPE", "METRIC", "VALUE_NUM",
+                                                  "VALUE_STR", "THRESHOLD_NUM", "EXCEPTION_FLAG"]
+                                     if c in rv_df.columns]
+                        flat_df = pd.concat(
+                            [rv_df[core_cols].reset_index(drop=True), details_df.reset_index(drop=True)],
+                            axis=1,
+                        )
+                        st.dataframe(flat_df, use_container_width=True)
+                    else:
+                        st.dataframe(rv_df.drop(columns=["DETAILS"], errors="ignore"), use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not flatten details: {e}")
+                    st.dataframe(rv_df, use_container_width=True)
+
+                # --- Raw data download ---
+                with st.expander("Raw Data"):
+                    st.dataframe(rv_df, use_container_width=True)
+            else:
+                st.info("No results returned.")
