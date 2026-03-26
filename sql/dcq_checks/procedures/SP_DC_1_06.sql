@@ -223,6 +223,29 @@ while (fieldsRs.next()) {
   const pct = (nonMissing > 0) ? (outN / nonMissing) * 100.0 : null;
   const flag = (nonMissing > 0 && pct !== null && pct > thresholdPct) ? 1 : 0;
 
+  // Fetch the actual out-of-spec values (top 100 by frequency).
+  let outOfSpecValues = [];
+  if (outN > 0) {
+    const oosRs = q(
+      `SELECT UPPER(TRIM(${col}::STRING)) AS val, COUNT(*) AS freq
+       FROM ${fq}
+       WHERE ${col} IS NOT NULL
+         AND TRIM(${col}::STRING) <> ''''
+         AND UPPER(TRIM(${col}::STRING)) NOT IN (${inList})
+         ${dateFilterWhere(tbl)}
+       GROUP BY val
+       ORDER BY freq DESC
+       LIMIT 100`,
+      binds
+    );
+    while (oosRs.next()) {
+      outOfSpecValues.push({
+        value: oosRs.getColumnValue(1),
+        count: Number(oosRs.getColumnValue(2))
+      });
+    }
+  }
+
   const details = {
     table: tbl,
     column: col,
@@ -235,6 +258,7 @@ while (fieldsRs.next()) {
     cdm_doc: cdmDoc,
     allowed_values_n: allowed.length,
     allowed_values_sample: allowed.slice(0, 50),
+    out_of_spec_values: outOfSpecValues,
     definition: ''Out-of-spec: non-missing value not in CDM VALUESETS for the field (case-insensitive).''
   };
 
@@ -242,6 +266,10 @@ while (fieldsRs.next()) {
   insertMetric(resultsTbl, bindsBase, tbl, tbl, col, ''OUT_OF_SPEC_N'', outN, String(outN), thresholdPct, false, details);
   insertMetric(resultsTbl, bindsBase, tbl, tbl, col, ''OUT_OF_SPEC_PCT'', pct, (pct === null ? null : String(pct)), thresholdPct, false, details);
   insertMetric(resultsTbl, bindsBase, tbl, tbl, col, ''OUT_OF_SPEC_FLAG'', flag, String(flag), thresholdPct, (flag === 1), details);
+  if (outOfSpecValues.length > 0) {
+    const valSummary = outOfSpecValues.map(v => `${v.value} (${v.count})`).join('', '');
+    insertMetric(resultsTbl, bindsBase, tbl, tbl, col, ''OUT_OF_SPEC_VALUES'', outN, valSummary, thresholdPct, false, details);
+  }
 
   evaluated.push({ table: tbl, column: col });
   fieldCount += 1;
