@@ -204,17 +204,40 @@ while (fieldsRs.next()) {
     continue;
   }
 
+  // Separate exact values from wildcard prefix patterns (e.g., UD_*, PC_*)
+  const exactAllowed = [];
+  const prefixPatterns = [];
+  for (const v of allowed) {
+    if (v.endsWith(''*'')) {
+      // e.g., "UD_*" -> prefix "UD_"
+      prefixPatterns.push(v.slice(0, -1));
+    } else {
+      exactAllowed.push(v);
+    }
+  }
+
   // Compute out-of-spec counts.
   const fq = `${DB_PARAM}.${SCHEMA_NAME}.${tbl}`;
-  const inList = allowed.map(() => ''?'').join('','');
+  const inList = exactAllowed.length > 0 ? exactAllowed.map(() => ''?'').join('','') : null;
+  // Build the "is in spec" condition: exact match OR prefix match
+  let inSpecCondition = '''';
+  if (inList) {
+    inSpecCondition = `UPPER(TRIM(${col}::STRING)) IN (${inList})`;
+  }
+  for (const pfx of prefixPatterns) {
+    const likeClause = `UPPER(TRIM(${col}::STRING)) LIKE ''${pfx.toUpperCase()}%''`;
+    inSpecCondition = inSpecCondition ? `(${inSpecCondition} OR ${likeClause})` : likeClause;
+  }
+  if (!inSpecCondition) inSpecCondition = ''FALSE'';
+
   const sql =
     `SELECT
        COUNT(*) AS denom_n,
        COUNT_IF(${col} IS NOT NULL AND TRIM(${col}::STRING) <> '''') AS non_missing_n,
-       COUNT_IF(${col} IS NOT NULL AND TRIM(${col}::STRING) <> '''' AND UPPER(TRIM(${col}::STRING)) NOT IN (${inList})) AS out_of_spec_n
+       COUNT_IF(${col} IS NOT NULL AND TRIM(${col}::STRING) <> '''' AND NOT (${inSpecCondition})) AS out_of_spec_n
      FROM ${fq}
      WHERE 1=1 ${dateFilterWhere(tbl)}`;
-  const binds = allowed.map(v => v.toUpperCase());
+  const binds = exactAllowed.map(v => v.toUpperCase());
   const rs = q(sql, binds);
   rs.next();
   const denom = Number(rs.getColumnValue(1));
@@ -231,7 +254,7 @@ while (fieldsRs.next()) {
        FROM ${fq}
        WHERE ${col} IS NOT NULL
          AND TRIM(${col}::STRING) <> ''''
-         AND UPPER(TRIM(${col}::STRING)) NOT IN (${inList})
+         AND NOT (${inSpecCondition})
          ${dateFilterWhere(tbl)}
        GROUP BY val
        ORDER BY freq DESC
@@ -257,9 +280,11 @@ while (fieldsRs.next()) {
     threshold_pct_gt: thresholdPct,
     cdm_doc: cdmDoc,
     allowed_values_n: allowed.length,
+    allowed_exact_n: exactAllowed.length,
+    allowed_prefix_patterns: prefixPatterns.length > 0 ? prefixPatterns : undefined,
     allowed_values_sample: allowed.slice(0, 50),
     out_of_spec_values: outOfSpecValues,
-    definition: ''Out-of-spec: non-missing value not in CDM VALUESETS for the field (case-insensitive).''
+    definition: ''Out-of-spec: non-missing value not in CDM VALUESETS for the field (case-insensitive). Wildcard patterns (e.g. UD_*, PC_*) match any value with that prefix.''
   };
 
   insertMetric(resultsTbl, bindsBase, tbl, tbl, col, ''NON_MISSING_N'', nonMissing, String(nonMissing), thresholdPct, false, details);
