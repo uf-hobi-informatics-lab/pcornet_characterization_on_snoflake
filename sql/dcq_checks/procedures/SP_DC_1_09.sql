@@ -15,9 +15,10 @@ function tableExists(db, schema, table) {
   rs.next();
   return rs.getColumnValue(1) > 0;
 }
-function insertMetric(resultsTbl, baseBinds, metric, valueNum, valueStr, exceptionFlag, detailsObj) {
+function insertMetric(resultsTbl, baseBinds, metric, valueNum, valueStr, exceptionFlag, detailsObj, thresholdNum) {
   const flagInt = exceptionFlag ? 1 : 0;
   const detailsJson = JSON.stringify(detailsObj || {});
+  const thresh = (thresholdNum !== undefined && thresholdNum !== null) ? thresholdNum : 0;
   q(
     `INSERT INTO ${resultsTbl} (
       RUN_ID, CHECK_ID, CHECK_NAME, ROW_NUM, EDC_TABLE,
@@ -27,11 +28,11 @@ function insertMetric(resultsTbl, baseBinds, metric, valueNum, valueStr, excepti
     SELECT
       ?, ?, ?, ?, ?,
       ?, ''ENCOUNTERID'', ?, ?, ?,
-      0,
+      ?,
       IFF(?=1, TRUE, FALSE),
       PARSE_JSON(?)
     `,
-    baseBinds.concat([metric, valueNum, valueStr, flagInt, detailsJson])
+    baseBinds.concat([metric, valueNum, valueStr, thresh, flagInt, detailsJson])
   );
 }
 if (!isSafeIdentPart(DB_PARAM)) throw new Error(`Unsafe DB_PARAM: ${DB_PARAM}`);
@@ -151,17 +152,19 @@ for (const t of selected) {
   const tableDistinct = Number(rs.getColumnValue(1));
   const orphanDistinct = Number(rs.getColumnValue(2));
   const orphanPct = (tableDistinct > 0) ? (orphanDistinct / tableDistinct) * 100 : 0;
-  const orphanFlag = orphanDistinct > 0 ? 1 : 0;
+  const orphanThresholdPct = 5;
+  const orphanFlag = orphanPct >= orphanThresholdPct ? 1 : 0;
   const details = {
     encounterid_field: t.col,
     table_encounterid_distinct_n: tableDistinct,
     orphan_encounterid_distinct_n: orphanDistinct,
-    orphan_encounterid_pct: orphanPct
+    orphan_encounterid_pct: orphanPct,
+    orphan_threshold_pct: orphanThresholdPct
   };
   insertMetric(resultsTbl, base, "TABLE_ENCOUNTERID_DISTINCT_N", tableDistinct, String(tableDistinct), false, details);
   insertMetric(resultsTbl, base, "ORPHAN_ENCOUNTERID_DISTINCT_N", orphanDistinct, String(orphanDistinct), false, details);
   insertMetric(resultsTbl, base, "ORPHAN_ENCOUNTERID_PCT", orphanPct, String(orphanPct), false, details);
-  insertMetric(resultsTbl, base, "ORPHAN_ENCOUNTERID_FLAG", orphanFlag, String(orphanFlag), (orphanFlag === 1), details);
+  insertMetric(resultsTbl, base, "ORPHAN_ENCOUNTERID_FLAG", orphanFlag, String(orphanFlag), (orphanFlag === 1), details, orphanThresholdPct);
 }
 return `DC 1.09 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only}`;
 ';
