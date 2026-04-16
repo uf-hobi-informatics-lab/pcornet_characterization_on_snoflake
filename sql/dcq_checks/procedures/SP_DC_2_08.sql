@@ -86,12 +86,12 @@ const tableDateCol = {
   PRO_CM: ''PRO_DATE'',
   VITAL: ''MEASURE_DATE''
 };
-function dateFilterWhere(tbl) {
-  const dc = tableDateCol[tbl] || null;
-  if (!dc) return '''';
+function dateFilterWhereCol(colName) {
+  // Apply date filter on a specific column (not the table default).
+  if (!colName) return '''';
   let clause = '''';
-  if (vStartDate) clause += ` AND TRY_TO_DATE(${dc}) >= TRY_TO_DATE(''${vStartDate}'')`;
-  if (vEndDate) clause += ` AND TRY_TO_DATE(${dc}) <= TRY_TO_DATE(''${vEndDate}'')`;
+  if (vStartDate) clause += ` AND TRY_TO_DATE(${colName}) >= TRY_TO_DATE(''${vStartDate}'')`;
+  if (vEndDate) clause += ` AND TRY_TO_DATE(${colName}) <= TRY_TO_DATE(''${vEndDate}'')`;
   return clause;
 }
 
@@ -130,8 +130,11 @@ const bindsBase = [RUN_ID, checkId, checkName, rowNum];
 q(`DELETE FROM ${resultsTbl} WHERE RUN_ID = ? AND ROW_NUM = ?`, [RUN_ID, rowNum]);
 
 // Determine response_date. SAS uses XTBL_L3_METADATA.RESPONSE_DATE.
-// We approximate using CURRENT_DATE and bind as a YYYY-MM-DD string (avoid JS Date bind issues).
-const responseDateStr = scalar("SELECT TO_VARCHAR(CURRENT_DATE(), ''YYYY-MM-DD'')");
+// If END_DATE is provided, use it so the evaluation window aligns with the
+// user-supplied date range.  Otherwise fall back to CURRENT_DATE.
+const responseDateStr = vEndDate
+  ? scalar("SELECT TO_VARCHAR(TRY_TO_DATE(''"+vEndDate+"''), ''YYYY-MM-DD'')")
+  : scalar("SELECT TO_VARCHAR(CURRENT_DATE(), ''YYYY-MM-DD'')");
 
 // Series definitions for monthly counts.
 // For ENCOUNTER/DIAGNOSIS/PROCEDURES we stratify by ENC_TYPE and month of ADMIT_DATE.
@@ -184,7 +187,7 @@ for (const d of defs) {
       `SELECT ''${t}'' AS TABLE_NAME,
               ${p5DateExpr(d.dateCol)} AS P5_DATE
        FROM ${fq}
-       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}`
+       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhereCol(d.dateCol)}`
     );
 
     seriesParts.push(
@@ -195,7 +198,7 @@ for (const d of defs) {
        FROM ${fq}
        WHERE ${d.dateCol} IS NOT NULL
          AND ${d.catCol} IS NOT NULL
-         AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhere(t)}
+         AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhereCol(d.dateCol)}
        GROUP BY 1,2,3`
     );
     includedTables.push(t);
@@ -210,7 +213,7 @@ for (const d of defs) {
         `SELECT ''${t}'' AS TABLE_NAME,
                 ${p5DateExpr(d.dateCol)} AS P5_DATE
          FROM ${fq}
-         WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}`
+         WHERE ${d.dateCol} IS NOT NULL${dateFilterWhereCol(d.dateCol)}`
       );
       seriesParts.push(
         `SELECT ''${t}'' AS TABLE_NAME,
@@ -220,7 +223,7 @@ for (const d of defs) {
          FROM ${fq}
          WHERE ${d.dateCol} IS NOT NULL
            AND ${d.catCol} IS NOT NULL
-           AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhere(t)}
+           AND UPPER(TRIM(${d.catCol}::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhereCol(d.dateCol)}
          GROUP BY 1,2,3`
       );
       includedTables.push(t);
@@ -232,7 +235,7 @@ for (const d of defs) {
          FROM ${fq} x
          JOIN ${encFq} e
            ON x.ENCOUNTERID = e.ENCOUNTERID
-         WHERE e.ADMIT_DATE IS NOT NULL${dateFilterWhere(''ENCOUNTER'')}`
+         WHERE e.ADMIT_DATE IS NOT NULL${dateFilterWhereCol(''e.ADMIT_DATE'')}`
       );
       seriesParts.push(
         `SELECT ''${t}'' AS TABLE_NAME,
@@ -244,7 +247,7 @@ for (const d of defs) {
            ON x.ENCOUNTERID = e.ENCOUNTERID
          WHERE e.ADMIT_DATE IS NOT NULL
            AND e.ENC_TYPE IS NOT NULL
-           AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhere(''ENCOUNTER'')}
+           AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN (''AV'',''ED'',''IP'',''EI'',''TH'')${dateFilterWhereCol(''e.ADMIT_DATE'')}
          GROUP BY 1,2,3`
       );
       includedTables.push(t);
@@ -255,7 +258,7 @@ for (const d of defs) {
       `SELECT ''${t}'' AS TABLE_NAME,
               ${p5DateExpr(d.dateCol)} AS P5_DATE
        FROM ${fq}
-       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}`
+       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhereCol(d.dateCol)}`
     );
     seriesParts.push(
       `SELECT ''${t}'' AS TABLE_NAME,
@@ -263,7 +266,7 @@ for (const d of defs) {
               DATE_TRUNC(''MONTH'', ${d.dateCol})::DATE AS MONTH,
               COUNT(*)::NUMBER AS RESULTN
        FROM ${fq}
-       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhere(t)}
+       WHERE ${d.dateCol} IS NOT NULL${dateFilterWhereCol(d.dateCol)}
        GROUP BY 1,2,3`
     );
     includedTables.push(t);
@@ -345,9 +348,9 @@ q(
      DSD,
      P5_DATE,
      MONTH11_DATE,
-     IFF(RESULTN = 0, ''ZERO'', IFF(DSD < (SELECT NSD FROM PARAMS), ''Z_LT_NSD'', ''OTHER'')) AS OUTLIER_REASON
+      IFF(RESULTN = 0, ''ZERO'', IFF(DSD <= (SELECT NSD FROM PARAMS), ''Z_LT_NSD'', ''OTHER'')) AS OUTLIER_REASON
    FROM ELIG
-   WHERE RESULTN = 0 OR DSD < (SELECT NSD FROM PARAMS)`,
+    WHERE RESULTN = 0 OR DSD <= (SELECT NSD FROM PARAMS)`,
   [responseDateStr, responseDateStr]
 );
 

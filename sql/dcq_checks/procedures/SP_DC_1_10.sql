@@ -50,9 +50,7 @@ function normDateParam(x) { if (x === null || x === undefined) return null; var 
 const vStartDate = normDateParam(START_DATE);
 const vEndDate = normDateParam(END_DATE);
 const tableDateCol = {
-  DIAGNOSIS: ''DX_DATE'',
-  ENCOUNTER: ''ADMIT_DATE'',
-  PROCEDURES: ''PX_DATE''
+  ENCOUNTER: ''ADMIT_DATE''
 };
 function dateFilterWhere(tbl) {
   const dc = tableDateCol[tbl] || null;

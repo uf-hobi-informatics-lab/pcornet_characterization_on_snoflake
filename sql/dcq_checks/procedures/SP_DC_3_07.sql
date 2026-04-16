@@ -64,8 +64,8 @@ const vStartDate = normDateParam(START_DATE);
 const vEndDate = normDateParam(END_DATE);
 const tableDateCol = {
   ENCOUNTER: ''ADMIT_DATE'',
-  DIAGNOSIS: ''DX_DATE'',
-  PROCEDURES: ''PX_DATE''
+  DIAGNOSIS: ''ADMIT_DATE'',
+  PROCEDURES: ''ADMIT_DATE''
 };
 function dateFilterWhere(tbl) {
   const dc = tableDateCol[tbl] || null;
@@ -164,7 +164,7 @@ function seriesSql(seriesName) {
             WHERE e.ADMIT_DATE IS NOT NULL
               AND e.ENC_TYPE IS NOT NULL
               AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN ${encTypes}
-              ${dateFilterWhere(''DIAGNOSIS'')}
+              ${dateFilterWhere(''ENCOUNTER'')}
             GROUP BY 1`;
   }
   if (seriesName === ''PROCEDURES'') {
@@ -185,7 +185,7 @@ function seriesSql(seriesName) {
             WHERE e.ADMIT_DATE IS NOT NULL
               AND e.ENC_TYPE IS NOT NULL
               AND UPPER(TRIM(e.ENC_TYPE::STRING)) IN ${encTypes}
-              ${dateFilterWhere(''PROCEDURES'')}
+              ${dateFilterWhere(''ENCOUNTER'')}
             GROUP BY 1`;
   }
   return null;
