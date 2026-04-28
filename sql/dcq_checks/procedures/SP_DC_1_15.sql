@@ -99,18 +99,33 @@ function groupKey(col) {
 }
 
 const inList = idCols.map(() => ''?'').join('','');
-const colsRs = q(
-  `SELECT
-     UPPER(TABLE_NAME) AS TABLE_NAME,
-     UPPER(COLUMN_NAME) AS COLUMN_NAME,
-     UPPER(DATA_TYPE) AS DATA_TYPE,
-     CHARACTER_MAXIMUM_LENGTH AS CHAR_MAX_LEN
-   FROM ${DB_PARAM}.INFORMATION_SCHEMA.COLUMNS
-   WHERE UPPER(TABLE_SCHEMA) = ?
-     AND UPPER(COLUMN_NAME) IN (${inList})
-   ORDER BY 1,2`,
-  [SCHEMA_NAME.toUpperCase()].concat(idCols)
-);
+  const cdmTablesRs = q(
+    `SELECT DISTINCT TRIM(value)::string 
+     FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY 
+     CROSS JOIN TABLE(FLATTEN(input => SOURCE_TABLES::variant))
+     WHERE ROW_NUM = 1.01`
+  );
+  const cdmTables = [];
+  while (cdmTablesRs.next()) {
+    cdmTables.push(cdmTablesRs.getColumnValue(1));
+  }
+  
+  if (cdmTables.length === 0) throw new Error(''Could not retrieve CDM tables from registry'');
+
+  const cdmTablesList = cdmTables.map(() => ''?'').join('','');
+  const colsRs = q(
+    `SELECT
+       UPPER(TABLE_NAME) AS TABLE_NAME,
+       UPPER(COLUMN_NAME) AS COLUMN_NAME,
+       UPPER(DATA_TYPE) AS DATA_TYPE,
+       CHARACTER_MAXIMUM_LENGTH AS CHAR_MAX_LEN
+     FROM ${DB_PARAM}.INFORMATION_SCHEMA.COLUMNS
+     WHERE UPPER(TABLE_SCHEMA) = ?
+       AND UPPER(TABLE_NAME) IN (${cdmTablesList})
+       AND UPPER(COLUMN_NAME) IN (${inList})
+     ORDER BY 1,2`,
+    [SCHEMA_NAME.toUpperCase()].concat(cdmTables).concat(idCols)
+  );
 
 const occurrences = [];
 while (colsRs.next()) {
