@@ -99,15 +99,24 @@ function groupKey(col) {
 }
 
 const inList = idCols.map(() => ''?'').join('','');
-  const cdmTablesRs = q(
-    `SELECT DISTINCT TRIM(value)::string 
+  const regTblRs = q(
+    `SELECT SOURCE_TABLES 
      FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY 
-     CROSS JOIN TABLE(FLATTEN(input => SOURCE_TABLES::variant))
-     WHERE ROW_NUM = 1.01`
+     WHERE ROW_NUM = 1.01
+     QUALIFY ROW_NUMBER() OVER (ORDER BY CHECK_ID) = 1`
   );
-  const cdmTables = [];
-  while (cdmTablesRs.next()) {
-    cdmTables.push(cdmTablesRs.getColumnValue(1));
+  
+  let cdmTables = [];
+  if (regTblRs.next()) {
+    const sourceTablesRaw = regTblRs.getColumnValue(1);
+    try {
+      const parsed = JSON.parse(sourceTablesRaw);
+      cdmTables = Array.isArray(parsed) 
+        ? parsed.map(t => t.toUpperCase().trim()) 
+        : [];
+    } catch (e) {
+      throw new Error(`Failed to parse SOURCE_TABLES JSON: ${e.message}`);
+    }
   }
   
   if (cdmTables.length === 0) throw new Error(''Could not retrieve CDM tables from registry'');
@@ -196,26 +205,28 @@ for (const g of Object.keys(groups).sort()) {
 }
 
 const status = (evaluated.length === 0) ? ''ERROR'' : ''OK'';
-insertMetric(
-  resultsTbl,
-  bindsBase,
-  (only === ''ALL'' ? ''ALL'' : only),
-  ''INFORMATION_SCHEMA.COLUMNS'',
-  ''ALL'',
-  ''STATUS'',
-  null,
-  status,
-  thresholdDistinctLenGt,
-  (status === ''ERROR''),
-  {
-    target_table: only,
-    evaluated_groups_n: evaluated.length,
-    skipped_groups_n: skipped.length,
-    skipped: skipped,
-    columns_evaluated: idCols,
-    note: ''This check inspects column metadata, not row-level data.''
-  }
-);
+  insertMetric(
+    resultsTbl,
+    bindsBase,
+    (only === ''ALL'' ? ''ALL'' : only),
+    ''INFORMATION_SCHEMA.COLUMNS'',
+    ''ALL'',
+    ''STATUS'',
+    null,
+    status,
+    thresholdDistinctLenGt,
+    (status === ''ERROR''),
+    {
+      target_table: only,
+      evaluated_groups_n: evaluated.length,
+      skipped_groups_n: skipped.length,
+      skipped: skipped,
+      columns_evaluated: idCols,
+      registry_cdm_tables: cdmTables,
+      searched_schema: SCHEMA_NAME.toUpperCase(),
+      note: ''This check inspects column metadata, not row-level data.''
+    }
+  );
 
 return `DC 1.15 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only} evaluated_groups=${evaluated.length}`;
 ';
