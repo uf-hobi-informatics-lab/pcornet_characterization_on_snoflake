@@ -42,6 +42,16 @@
 3. Run `python push_snowflake_assets.py` to deploy both.
 4. No changes needed in `sp_run_dcq.sql` or `app.py` — the registry drives everything.
 
+## Potential Code Errors Procedure (`potential_code_errors.sql`)
+
+- Located at `sql/dcq_checks/procedures/potential_code_errors.sql`.
+- Standalone procedure (not part of the DCQ registry/orchestrator). Called directly or from the Streamlit app's second tab.
+- Signature: `(DB_PARAM, SCHEMA_NAME, TABLE_LIST DEFAULT 'ALL')`. Uses `EXECUTE AS OWNER`.
+- Validates medical codes (ICD-9, ICD-10, CPT/HCPCS, NDC, RXNORM, LOINC, SNOMED) against structural heuristics.
+- Tables validated: DIAGNOSIS, PROCEDURES, PRESCRIBING, DISPENSING, MED_ADMIN, LAB_RESULT_CM, CONDITION, IMMUNIZATION, OBS_GEN, OBS_CLIN.
+- For each table creates `<TABLE>_VALIDATION` (all codes) and `BAD_<TABLE>` (codes failing rules), plus a final `CODE_SUMMARY` rollup.
+- Adding a new table requires changes in 4 places: (1) the ALL array, (2) drop table block, (3) validation+bad table section, (4) base_counts and bad_counts summary queries.
+
 ## Git & Remotes
 
 - **Branch**: `main`

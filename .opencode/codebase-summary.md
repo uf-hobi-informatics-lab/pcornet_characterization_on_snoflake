@@ -83,7 +83,7 @@ characterization_on_snowflake/
 │   │       ├── SP_DC_1_02.sql    #   All share same 8-param signature:
 │   │       ├── ...               #   (DB_PARAM, SCHEMA_NAME, RUN_ID, TARGET_TABLE,
 │   │       ├── SP_DC_4_03.sql    #    PREV_DB_PARAM, PREV_SCHEMA_NAME, START_DATE, END_DATE)
-│   │       └── potential_code_errors.sql  # Medical code validation (ICD, CPT, NDC, LOINC)
+│   │       └── potential_code_errors.sql  # Medical code validation (ICD, CPT, NDC, LOINC, SNOMED)
 │   └── edc_ref/
 │       ├── tables/               # DDL for reference tables
 │       │   ├── CDM_PARSEABLE_RAW.sql
@@ -165,6 +165,7 @@ characterization_on_snowflake/
 
 > Newest entries first.
 
+- **2026-05-13**: Added OBS_GEN and OBS_CLIN table validation to `potential_code_errors.sql`. Validates LOINC (LC) and SNOMED (SM) codes in both tables. Updated ALL table list, drop logic, validation sections, and summary queries.
 - **2025-03-09**: Updated CDM_PARSEABLE_RAW to PCORnet CDM v7.0 from `2025_05_01_PCORnet_Common_Data_Model_v7dot0_parseable.xlsx` (15,908 rows)
 - **2025-03-09**: DC 1.09 threshold updated — orphan ENCOUNTERID flag now requires >= 5% (was > 0). Updated procedure, registry THRESHOLDS and DOC_INTERPRETATION.
 - **2025-03-09**: Moved parallel execution from Snowflake Tasks to Python ThreadPoolExecutor. SP_RUN_DCQ refactored to setup-only (returns JSON). Each check runs on its own Snowflake connection.
