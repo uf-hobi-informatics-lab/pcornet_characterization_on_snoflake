@@ -12,12 +12,12 @@ AS '
     //   DB_PARAM: Database name containing PCORnet CDM tables
     //   SCHEMA_NAME: Schema name containing source data tables
     //   table_list: Comma-separated list of tables to validate, or ''ALL'' for all tables
-    //              Options: DIAGNOSIS, PROCEDURES, PRESCRIBING, DISPENSING, MED_ADMIN, LAB_RESULT_CM, CONDITION, IMMUNIZATION, ALL
+    //              Options: DIAGNOSIS, PROCEDURES, PRESCRIBING, DISPENSING, MED_ADMIN, LAB_RESULT_CM, CONDITION, IMMUNIZATION, OBS_GEN, OBS_CLIN, ALL
     // ================================================================================
 
     // Parse table list parameter
     const tables_to_check = TABLE_LIST.toUpperCase() === ''ALL'' ?
-    [''DIAGNOSIS'', ''PROCEDURES'', ''PRESCRIBING'', ''DISPENSING'', ''MED_ADMIN'', ''LAB_RESULT_CM'', ''CONDITION'', ''IMMUNIZATION''] :
+    [''DIAGNOSIS'', ''PROCEDURES'', ''PRESCRIBING'', ''DISPENSING'', ''MED_ADMIN'', ''LAB_RESULT_CM'', ''CONDITION'', ''IMMUNIZATION'', ''OBS_GEN'', ''OBS_CLIN''] :
     TABLE_LIST.toUpperCase().split('','').map(t => t.trim());
     // ================================================================================
     // Potential Code Errors - Snowflake JavaScript Function
@@ -79,6 +79,16 @@ AS '
         if (tables_to_check.includes(''IMMUNIZATION'')) {
             dropTableIfExists(`${DB_PARAM}.CHARACTERIZATION.IMMUNIZATION_VALIDATION`);
             dropTableIfExists(`${DB_PARAM}.CHARACTERIZATION.BAD_IMMUNIZATION`);
+        }
+
+        if (tables_to_check.includes(''OBS_GEN'')) {
+            dropTableIfExists(`${DB_PARAM}.CHARACTERIZATION.OBS_GEN_VALIDATION`);
+            dropTableIfExists(`${DB_PARAM}.CHARACTERIZATION.BAD_OBS_GEN`);
+        }
+
+        if (tables_to_check.includes(''OBS_CLIN'')) {
+            dropTableIfExists(`${DB_PARAM}.CHARACTERIZATION.OBS_CLIN_VALIDATION`);
+            dropTableIfExists(`${DB_PARAM}.CHARACTERIZATION.BAD_OBS_CLIN`);
         }
 
         // Summary is always regenerated for the selected tables.
@@ -734,7 +744,157 @@ AS '
     }
 
     // ================================================================================
-// 7. Summary Statistics
+    // 7. OBS_GEN Table Validation (LOINC and SNOMED)
+    // ================================================================================
+
+    if (tables_to_check.includes(''OBS_GEN'')) {
+        try {
+            snowflake.execute({
+                sqlText: `
+                CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.OBS_GEN_VALIDATION AS
+            SELECT 
+                ''OBS_GEN'' AS table_name,
+                obsgenid,
+                obsgen_code AS code,
+                obsgen_type AS code_type,
+                UPPER(REGEXP_REPLACE(obsgen_code, ''[.,\\\\s]'', '''')) AS code_clean,
+                LENGTH(UPPER(REGEXP_REPLACE(obsgen_code, ''[.,\\\\s]'', ''''))) AS code_length,
+                CASE 
+                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(obsgen_code, ''[.,\\\\s]'', '''')), ''[A-Z]'') > 0 THEN 1 
+                    ELSE 0 
+                END AS has_alpha,
+                CASE 
+                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(obsgen_code, ''[.,\\\\s]'', '''')), ''[0-9]'') > 0 THEN 1 
+                    ELSE 0 
+                END AS has_digit,
+                CURRENT_TIMESTAMP() AS processed_date
+            FROM ${DB_PARAM}.${SCHEMA_NAME}.OBS_GEN
+            WHERE obsgen_code IS NOT NULL
+              AND obsgen_type IN (''LC'', ''SM'')
+                `
+            });
+
+            snowflake.execute({
+                sqlText: `
+                CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.BAD_OBS_GEN AS
+            SELECT *
+            FROM (
+                SELECT 
+                    table_name,
+                    obsgenid,
+                    code,
+                    code_type,
+                    code_clean,
+                    code_length,
+                    CASE 
+                        WHEN code_type = ''LC'' THEN CASE WHEN code_length < 3 OR code_length > 8 THEN 1 ELSE 0 END
+                        WHEN code_type = ''SM'' THEN CASE WHEN code_length < 6 OR code_length > 18 THEN 1 ELSE 0 END
+                        ELSE 0
+                    END AS unexp_length,
+                    CASE 
+                        WHEN code_type IN (''LC'', ''SM'') THEN CASE WHEN has_alpha > 0 THEN 1 ELSE 0 END
+                        ELSE 0
+                    END AS unexp_alpha,
+                    CASE 
+                        WHEN code_type = ''LC'' THEN CASE WHEN SUBSTR(REVERSE(code_clean), 2, 1) != ''-'' THEN 1 ELSE 0 END
+                        ELSE NULL
+                    END AS unexp_string,
+                    CASE 
+                        WHEN has_digit = 0 THEN 1 ELSE 0
+                    END AS unexp_numeric,
+                    processed_date
+                FROM ${DB_PARAM}.CHARACTERIZATION.OBS_GEN_VALIDATION
+            ) s
+            WHERE GREATEST(
+                COALESCE(unexp_length, 0),
+                COALESCE(unexp_alpha, 0),
+                COALESCE(unexp_string, 0),
+                COALESCE(unexp_numeric, 0)
+            ) = 1
+                `
+            });
+        } catch (err) {
+            // Table might not exist, skip validation
+        }
+    }
+
+    // ================================================================================
+    // 8. OBS_CLIN Table Validation (LOINC and SNOMED)
+    // ================================================================================
+
+    if (tables_to_check.includes(''OBS_CLIN'')) {
+        try {
+            snowflake.execute({
+                sqlText: `
+                CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.OBS_CLIN_VALIDATION AS
+            SELECT 
+                ''OBS_CLIN'' AS table_name,
+                obsclinid,
+                obsclin_code AS code,
+                obsclin_type AS code_type,
+                UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', '''')) AS code_clean,
+                LENGTH(UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', ''''))) AS code_length,
+                CASE 
+                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', '''')), ''[A-Z]'') > 0 THEN 1 
+                    ELSE 0 
+                END AS has_alpha,
+                CASE 
+                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', '''')), ''[0-9]'') > 0 THEN 1 
+                    ELSE 0 
+                END AS has_digit,
+                CURRENT_TIMESTAMP() AS processed_date
+            FROM ${DB_PARAM}.${SCHEMA_NAME}.OBS_CLIN
+            WHERE obsclin_code IS NOT NULL
+              AND obsclin_type IN (''LC'', ''SM'')
+                `
+            });
+
+            snowflake.execute({
+                sqlText: `
+                CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.BAD_OBS_CLIN AS
+            SELECT *
+            FROM (
+                SELECT 
+                    table_name,
+                    obsclinid,
+                    code,
+                    code_type,
+                    code_clean,
+                    code_length,
+                    CASE 
+                        WHEN code_type = ''LC'' THEN CASE WHEN code_length < 3 OR code_length > 8 THEN 1 ELSE 0 END
+                        WHEN code_type = ''SM'' THEN CASE WHEN code_length < 6 OR code_length > 18 THEN 1 ELSE 0 END
+                        ELSE 0
+                    END AS unexp_length,
+                    CASE 
+                        WHEN code_type IN (''LC'', ''SM'') THEN CASE WHEN has_alpha > 0 THEN 1 ELSE 0 END
+                        ELSE 0
+                    END AS unexp_alpha,
+                    CASE 
+                        WHEN code_type = ''LC'' THEN CASE WHEN SUBSTR(REVERSE(code_clean), 2, 1) != ''-'' THEN 1 ELSE 0 END
+                        ELSE NULL
+                    END AS unexp_string,
+                    CASE 
+                        WHEN has_digit = 0 THEN 1 ELSE 0
+                    END AS unexp_numeric,
+                    processed_date
+                FROM ${DB_PARAM}.CHARACTERIZATION.OBS_CLIN_VALIDATION
+            ) s
+            WHERE GREATEST(
+                COALESCE(unexp_length, 0),
+                COALESCE(unexp_alpha, 0),
+                COALESCE(unexp_string, 0),
+                COALESCE(unexp_numeric, 0)
+            ) = 1
+                `
+            });
+        } catch (err) {
+            // Table might not exist, skip validation
+        }
+    }
+
+    // ================================================================================
+// 9. Summary Statistics
 // ================================================================================
 
 // Build the base_counts query dynamically
@@ -827,6 +987,28 @@ if (tables_to_check.includes(''IMMUNIZATION'')) {
     GROUP BY code_type`);
 }
 
+if (tables_to_check.includes(''OBS_GEN'')) {
+    base_counts_queries.push(`
+    SELECT
+    ''OBS_GEN'' AS table_name,
+    code_type,
+    COUNT(*) AS total_records,
+    COUNT(DISTINCT code_clean) AS total_codes
+    FROM ${DB_PARAM}.CHARACTERIZATION.OBS_GEN_VALIDATION
+    GROUP BY code_type`);
+}
+
+if (tables_to_check.includes(''OBS_CLIN'')) {
+    base_counts_queries.push(`
+    SELECT
+    ''OBS_CLIN'' AS table_name,
+    code_type,
+    COUNT(*) AS total_records,
+    COUNT(DISTINCT code_clean) AS total_codes
+    FROM ${DB_PARAM}.CHARACTERIZATION.OBS_CLIN_VALIDATION
+    GROUP BY code_type`);
+}
+
 // Build the bad_counts query dynamically
 let bad_counts_queries = [];
 if (tables_to_check.includes(''DIAGNOSIS'')) {
@@ -914,6 +1096,28 @@ if (tables_to_check.includes(''IMMUNIZATION'')) {
     COUNT(*) AS bad_records,
     COUNT(DISTINCT code_clean) AS bad_codes
     FROM ${DB_PARAM}.CHARACTERIZATION.BAD_IMMUNIZATION
+    GROUP BY code_type`);
+}
+
+if (tables_to_check.includes(''OBS_GEN'')) {
+    bad_counts_queries.push(`
+    SELECT
+    ''OBS_GEN'' AS table_name,
+    code_type,
+    COUNT(*) AS bad_records,
+    COUNT(DISTINCT code_clean) AS bad_codes
+    FROM ${DB_PARAM}.CHARACTERIZATION.BAD_OBS_GEN
+    GROUP BY code_type`);
+}
+
+if (tables_to_check.includes(''OBS_CLIN'')) {
+    bad_counts_queries.push(`
+    SELECT
+    ''OBS_CLIN'' AS table_name,
+    code_type,
+    COUNT(*) AS bad_records,
+    COUNT(DISTINCT code_clean) AS bad_codes
+    FROM ${DB_PARAM}.CHARACTERIZATION.BAD_OBS_CLIN
     GROUP BY code_type`);
 }
 
