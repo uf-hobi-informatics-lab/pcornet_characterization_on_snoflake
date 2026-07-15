@@ -21,17 +21,17 @@
 
 ### Execution Model
 
-1. **Registry-driven**: `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY` (48 rows) is the source of truth for all checks
+1. **Registry-driven**: `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY` (49 rows) is the source of truth for all checks
 2. **Setup procedure**: `CHARACTERIZATION.DCQ.SP_RUN_DCQ` (11 params) creates output tables, inserts run/log rows, queries the registry, and **returns a JSON payload** with the run_id and check list
 3. **Parallel execution**: The Streamlit app parses the JSON and uses Python `concurrent.futures.ThreadPoolExecutor` with one dedicated Snowflake connection per thread to run checks concurrently
 4. **Each check procedure** (`SP_DC_X_YY`) validates a specific aspect of CDM data and writes metric rows to `<DB_PARAM>.CHARACTERIZATION_DCQ.DCQ_RESULTS`
 5. **Progress tracking**: Each thread updates `DCQ_CHECK_LOG` (PENDING -> RUNNING -> SUCCEEDED/FAILED). The Streamlit UI shows a real-time progress bar.
 
-### 4 Check Parts (48 procedures total)
+### 4 Check Parts (49 procedures total)
 
 - **Part 1** (DC 1.01-1.21): Structural integrity (tables exist, columns match spec, PKs unique, value sets, orphans)
 - **Part 2** (DC 2.01-2.09): Temporal & plausibility (future dates, extreme values, illogical date relationships)
-- **Part 3** (DC 3.01-3.17): Completeness (missing/unknown values across fields)
+- **Part 3** (DC 3.01-3.18): Completeness + cross-table (missing/unknown values across fields; DC 3.18 = XTBL_L3_CFIPSZIP_5Y)
 - **Part 4** (DC 4.01-4.03): Cross-refresh comparison (record count changes, distribution shifts)
 
 ### Dual Backend
@@ -48,7 +48,7 @@ All results go to `<DB_PARAM>.CHARACTERIZATION_DCQ` with three tables:
 
 ### Lock Contention Constraint
 
-All 48 checks write to the shared `DCQ_RESULTS` table. Snowflake has a 20-waiter lock limit on DML, so max parallelism is capped at 20 in the UI (default 10).
+All 49 checks write to the shared `DCQ_RESULTS` table. Snowflake has a 20-waiter lock limit on DML, so max parallelism is capped at 20 in the UI (default 10).
 
 ## Directory Map
 
@@ -79,10 +79,11 @@ characterization_on_snowflake/
 │   │                             #   Signature: 11 params (DB_PARAM through MAX_PARALLEL)
 │   ├── dcq_checks/
 │   │   └── procedures/
-│   │       ├── SP_DC_1_01.sql    # 48 check procedures (JavaScript, EXECUTE AS CALLER)
+│   │       ├── SP_DC_1_01.sql    # 49 check procedures (JavaScript, EXECUTE AS CALLER)
 │   │       ├── SP_DC_1_02.sql    #   All share same 8-param signature:
 │   │       ├── ...               #   (DB_PARAM, SCHEMA_NAME, RUN_ID, TARGET_TABLE,
-│   │       ├── SP_DC_4_03.sql    #    PREV_DB_PARAM, PREV_SCHEMA_NAME, START_DATE, END_DATE)
+│   │       ├── SP_DC_3_18.sql    #    PREV_DB_PARAM, PREV_SCHEMA_NAME, START_DATE, END_DATE)
+│   │       ├── SP_DC_4_03.sql
 │   │       └── potential_code_errors.sql  # Medical code validation (ICD, CPT, NDC, LOINC, SNOMED)
 │   └── edc_ref/
 │       ├── tables/               # DDL for reference tables
@@ -97,7 +98,7 @@ characterization_on_snowflake/
 │
 └── snowflake/
     ├── DCQ_CHECK_REGISTRY.sql          # Registry table DDL
-    ├── DCQ_CHECK_REGISTRY_data_full.json  # 48 check definitions (JSON)
+    ├── DCQ_CHECK_REGISTRY_data_full.json  # 49 check definitions (JSON)
     └── edc_ref/
         ├── CDM_PARSEABLE_RAW_data.json.gz   # PCORnet CDM v7.0 spec (15,908 rows)
         ├── LOINC_REF_RAW_data.json.gz       # LOINC reference codes
@@ -131,7 +132,7 @@ characterization_on_snowflake/
 |------|-------|---------|
 | `streamlit/app.py` | ~700 | Main UI, parallel executor, progress tracking |
 | `sql/dcq/procedures/sp_run_dcq.sql` | ~200 | Setup-only orchestrator, returns JSON check list |
-| `sql/dcq_checks/procedures/SP_DC_*.sql` | ~100-300 each | Individual check procedures (48 files) |
+| `sql/dcq_checks/procedures/SP_DC_*.sql` | ~100-300 each | Individual check procedures (49 files) |
 | `push_snowflake_assets.py` | ~170 | Deploy script (strips header quotes, loads JSON data) |
 | `snowflake/DCQ_CHECK_REGISTRY_data_full.json` | ~2000 | Check definitions with metadata, thresholds, docs |
 
@@ -165,6 +166,14 @@ characterization_on_snowflake/
 
 > Newest entries first.
 
+- **2026-07-15**: **DC 3.03 PRO_CODE added.** SAS v16 `edc_report.sas` added `PRO_CODE` (and `PRO_SOURCE`) to the Table IVD threshold-flag list. Ported the intent to Snowflake by adding `PRO_CODE` to the `PRO_CM` required-not-null list in `SP_DC_3_03.sql`. PRO_SOURCE not added (per user).
+- **2026-07-15**: **DC 3.18 added.** New check `SP_DC_3_18` implements SAS `XTBL_L3_CFIPSZIP_5Y` (Table IB row 3.18). Cohort = PATIDs with F2F encounters (ENC_TYPE in ED/EI/IP/OS/AV) in past 5 years (ADMIT_DATE in [today-63mo, today-3mo]) joined to LDS_ADDRESS_HISTORY rows with CURRENT_ADDRESS_FLAG='Y'. Emits patient-level counts (PATIENTS_N, ADDRESS_ZIP5_N, COUNTY_FIPS_N, BOTH_N), derived PCT_BOTH, and BOTH_FIPSZIP_FLAG (fires when PATIENTS_N>0 AND (PCT_BOTH<80 OR BOTH_N=0)). Registry row `DC_3_18` added. Registry now 49 rows.
+- **2026-07-15**: **DC 1.13 SNOMED expansion (SAS PCE v16).** `potential_code_errors.sql` extended:
+  - DIAGNOSIS: filter now `dx_type IN ('09','10','SM')`; adds SNOMED heuristic (length 6-18, no alpha, not all-zeros/all-nines).
+  - CONDITION: filter now `condition_type IN ('09','10','SM')`; adds SNOMED heuristic.
+  - LAB_RESULT_CM: now reads both `LAB_LOINC` (code_type='LC') and `RESULT_SNOMED` (code_type='SM') via UNION ALL; BAD_LAB SNOMED heuristic added.
+  - OBS_CLIN: now reads both `OBSCLIN_CODE` (typed LC/SM) and `OBSCLIN_RESULT_SNOMED` (always SM) via UNION ALL. BAD_OBS_CLIN and BAD_OBS_GEN SNOMED string rule tightened to SAS-faithful all-zeros/all-nines check.
+  - `DC_1_13` registry `SOURCE_TABLES` expanded to include LAB_RESULT_CM, OBS_CLIN, OBS_GEN (so they are selectable via SOURCE_TABLE mode).
 - **2026-05-13**: Added OBS_GEN and OBS_CLIN table validation to `potential_code_errors.sql`. Validates LOINC (LC) and SNOMED (SM) codes in both tables. Updated ALL table list, drop logic, validation sections, and summary queries.
 - **2025-03-09**: Updated CDM_PARSEABLE_RAW to PCORnet CDM v7.0 from `2025_05_01_PCORnet_Common_Data_Model_v7dot0_parseable.xlsx` (15,908 rows)
 - **2025-03-09**: DC 1.09 threshold updated — orphan ENCOUNTERID flag now requires >= 5% (was > 0). Updated procedure, registry THRESHOLDS and DOC_INTERPRETATION.
