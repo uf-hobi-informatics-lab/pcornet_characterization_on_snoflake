@@ -1,0 +1,2136 @@
+{
+  "ivc": [
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "BIRTH_DATE",
+      "sas_var": "BIRTH_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "01",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "BIRTH_TIME",
+      "sas_var": "BIRTH_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "02",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "SEX",
+      "sas_var": "SEX",
+      "dc_name": "DEM_L3_SEXDIST",
+      "ord": "03",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "HISPANIC",
+      "sas_var": "HISPANIC",
+      "dc_name": "DEM_L3_HISPDIST",
+      "ord": "04",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE",
+      "sas_var": "RACE",
+      "dc_name": "DEM_L3_RACE",
+      "ord": "05",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "GENDER_IDENTITY",
+      "sas_var": "GENDER_IDENTITY",
+      "dc_name": "DEM_L3_GENDERDIST",
+      "ord": "06",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "SEXUAL_ORIENTATION",
+      "sas_var": "SEXUAL_ORIENTATION",
+      "dc_name": "DEM_L3_ORIENTDIST",
+      "ord": "07",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "PAT_PREF_LANGUAGE_SPOKEN",
+      "sas_var": "PAT_PREF_LANGUAGE_SPOKEN",
+      "dc_name": "DEM_L3_PATPREFLANG",
+      "ord": "08",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "BIOBANK_FLAG",
+      "sas_var": "BIOBANK_FLAG",
+      "dc_name": "DEM_L3_BIOBANK",
+      "ord": "09",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_MISSING",
+      "sas_var": "RACE_ETH_MISSING",
+      "dc_name": "DEM_L3_RACEETHMISS",
+      "ord": "10",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_AI_AN",
+      "sas_var": "RACE_ETH_AI_AN",
+      "dc_name": "DEM_L3_RACEETHAIAN",
+      "ord": "11",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_ASIAN",
+      "sas_var": "RACE_ETH_ASIAN",
+      "dc_name": "DEM_L3_RACEETHASIAN",
+      "ord": "12",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_BLACK",
+      "sas_var": "RACE_ETH_BLACK",
+      "dc_name": "DEM_L3_RACEETHBLACK",
+      "ord": "13",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_HISPANIC",
+      "sas_var": "RACE_ETH_HISPANIC",
+      "dc_name": "DEM_L3_RACEETHHISPANIC",
+      "ord": "14",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_ME_NA",
+      "sas_var": "RACE_ETH_ME_NA",
+      "dc_name": "DEM_L3_RACEETHMENA",
+      "ord": "15",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_NH_PI",
+      "sas_var": "RACE_ETH_NH_PI",
+      "dc_name": "DEM_L3_RACEETHNHPI",
+      "ord": "16",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEMOGRAPHIC",
+      "column": "RACE_ETH_WHITE",
+      "sas_var": "RACE_ETH_WHITE",
+      "dc_name": "DEM_L3_RACEETHWHITE",
+      "ord": "17",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENROLLMENT",
+      "column": "ENR_END_DATE",
+      "sas_var": "ENR_END_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "18",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENROLLMENT",
+      "column": "CHART",
+      "sas_var": "CHART",
+      "dc_name": "ENR_L3_CHART",
+      "ord": "19",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "ADMIT_TIME",
+      "sas_var": "ADMIT_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "20",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "DISCHARGE_DATE",
+      "sas_var": "DISCHARGE_DATE",
+      "dc_name": "ENC_L3_ENCTYPE_DDATE_YM",
+      "ord": "21",
+      "missing_kind": "category",
+      "denom_filter": "ip_ei",
+      "is_flag": true
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "DISCHARGE_TIME",
+      "sas_var": "DISCHARGE_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "22",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "ENC_TYPE",
+      "sas_var": "ENC_TYPE",
+      "dc_name": "ENC_L3_ENCTYPE",
+      "ord": "23",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "PROVIDERID",
+      "sas_var": "PROVIDERID",
+      "dc_name": "ENC_L3_N",
+      "ord": "24",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "FACILITYID",
+      "sas_var": "FACILITYID",
+      "dc_name": "ENC_L3_N",
+      "ord": "25",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "DISCHARGE_DISPOSITION",
+      "sas_var": "DISCHARGE_DISPOSITION",
+      "dc_name": "ENC_L3_ENCTYPE_DISDISP",
+      "ord": "26",
+      "missing_kind": "category",
+      "denom_filter": "ip_ei",
+      "is_flag": true
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "DISCHARGE_STATUS",
+      "sas_var": "DISCHARGE_STATUS",
+      "dc_name": "ENC_L3_ENCTYPE_DISSTAT",
+      "ord": "27",
+      "missing_kind": "category",
+      "denom_filter": "ip_ei",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "DRG",
+      "sas_var": "DRG",
+      "dc_name": "ENC_L3_ENCTYPE_DRG",
+      "ord": "28",
+      "missing_kind": "category",
+      "denom_filter": "ip_ei",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "DRG_TYPE",
+      "sas_var": "DRG_TYPE",
+      "dc_name": "ENC_L3_DRG_TYPE",
+      "ord": "29",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "ADMITTING_SOURCE",
+      "sas_var": "ADMITTING_SOURCE",
+      "dc_name": "ENC_L3_ENCTYPE_ADMSRC",
+      "ord": "30",
+      "missing_kind": "category",
+      "denom_filter": "ip_ei",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "PAYER_TYPE_PRIMARY",
+      "sas_var": "PAYER_TYPE_PRIMARY",
+      "dc_name": "ENC_L3_PAYERTYPE1",
+      "ord": "31",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "PAYER_TYPE_SECONDARY",
+      "sas_var": "PAYER_TYPE_SECONDARY",
+      "dc_name": "ENC_L3_PAYERTYPE2",
+      "ord": "32",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "FACILITY_TYPE",
+      "sas_var": "FACILITY_TYPE",
+      "dc_name": "ENC_L3_FACILITYTYPE",
+      "ord": "33",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "ENCOUNTER",
+      "column": "FACILITY_LOCATION",
+      "sas_var": "FACILITY_LOCATION",
+      "dc_name": "ENC_L3_FACILITYLOC",
+      "ord": "34",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "DX_DATE",
+      "sas_var": "DX_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "35",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "DX_TYPE",
+      "sas_var": "DX_TYPE",
+      "dc_name": "DIA_L3_DXTYPE",
+      "ord": "36",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "DX_SOURCE",
+      "sas_var": "DX_SOURCE",
+      "dc_name": "DIA_L3_DXSOURCE",
+      "ord": "37",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "DX_ORIGIN",
+      "sas_var": "DX_ORIGIN",
+      "dc_name": "DIA_L3_ORIGIN",
+      "ord": "38",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "PDX",
+      "sas_var": "PDX",
+      "dc_name": "DIA_L3_PDX_ENCTYPE",
+      "ord": "39",
+      "missing_kind": "category",
+      "denom_filter": "ip_ei",
+      "is_flag": false
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "ENCOUNTERID",
+      "sas_var": "DIA_ENCOUNTERID",
+      "dc_name": "DIA_L3_N",
+      "ord": "40",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "ADMIT_DATE",
+      "sas_var": "DIA_ADMIT_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "41",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "ENC_TYPE",
+      "sas_var": "DIA_ENC_TYPE",
+      "dc_name": "DIA_L3_ENCTYPE",
+      "ord": "42",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "DX_POA",
+      "sas_var": "DX_POA",
+      "dc_name": "DIA_L3_DXPOA",
+      "ord": "43",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DIAGNOSIS",
+      "column": "PROVIDERID",
+      "sas_var": "DIA_PROVIDERID",
+      "dc_name": "DIA_L3_N",
+      "ord": "44",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "PX_DATE",
+      "sas_var": "PX_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "45",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "PX_TYPE",
+      "sas_var": "PX_TYPE",
+      "dc_name": "PRO_L3_PXTYPE",
+      "ord": "46",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "PX_SOURCE",
+      "sas_var": "PX_SOURCE",
+      "dc_name": "PRO_L3_PXSOURCE",
+      "ord": "47",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "ENCOUNTERID",
+      "sas_var": "PRO_ENCOUNTERID",
+      "dc_name": "PRO_L3_N",
+      "ord": "48",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "PPX",
+      "sas_var": "PPX",
+      "dc_name": "PRO_L3_PPX",
+      "ord": "49",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "PROVIDERID",
+      "sas_var": "PRO_PROVIDERID",
+      "dc_name": "PRO_L3_N",
+      "ord": "50",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "ADMIT_DATE",
+      "sas_var": "PRO_ADMIT_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "51",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROCEDURES",
+      "column": "ENC_TYPE",
+      "sas_var": "PRO_ENC_TYPE",
+      "dc_name": "PRO_L3_ENCTYPE",
+      "ord": "52",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    }
+  ],
+  "ivd": [
+    {
+      "table": "VITAL",
+      "column": "ENCOUNTERID",
+      "sas_var": "VITAL_ENCOUNTERID",
+      "dc_name": "VIT_L3_N",
+      "ord": "00",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "VITAL",
+      "column": "VITAL_SOURCE",
+      "sas_var": "VITAL_SOURCE",
+      "dc_name": "VIT_L3_VITAL_SOURCE",
+      "ord": "01",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "VITAL",
+      "column": "MEASURE_TIME",
+      "sas_var": "MEASURE_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "02",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH",
+      "column": "DEATH_DATE_IMPUTE",
+      "sas_var": "DEATH_DATE_IMPUTE",
+      "dc_name": "DEATH_L3_IMPUTE",
+      "ord": "03",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH",
+      "column": "DEATH_MATCH_CONFIDENCE",
+      "sas_var": "DEATH_MATCH_CONFIDENCE",
+      "dc_name": "DEATH_L3_MATCH",
+      "ord": "04",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH",
+      "column": "DEATH_DATE",
+      "sas_var": "DEATH_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "05",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH",
+      "column": "DEATH_SOURCE",
+      "sas_var": "DEATH_SOURCE",
+      "dc_name": "DEATH_L3_SOURCE",
+      "ord": "06",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "ENCOUNTERID",
+      "sas_var": "ENCOUNTERID",
+      "dc_name": "LAB_L3_N",
+      "ord": "07",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "SPECIMEN_SOURCE",
+      "sas_var": "SPECIMEN_SOURCE",
+      "dc_name": "LAB_L3_SOURCE",
+      "ord": "08",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "LAB_LOINC",
+      "sas_var": "LAB_LOINC",
+      "dc_name": "LAB_L3_LOINC",
+      "ord": "09",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "PRIORITY",
+      "sas_var": "PRIORITY",
+      "dc_name": "LAB_L3_PRIORITY",
+      "ord": "10",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "RESULT_LOC",
+      "sas_var": "RESULT_LOC",
+      "dc_name": "LAB_L3_LOC",
+      "ord": "11",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "LAB_PX_TYPE",
+      "sas_var": "LAB_PX_TYPE",
+      "dc_name": "LAB_L3_PX_TYPE",
+      "ord": "12",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "LAB_PX",
+      "sas_var": "LAB_PX",
+      "dc_name": "LAB_L3_PX_PXTYPE",
+      "ord": "13",
+      "missing_kind": "cross_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "LAB_ORDER_DATE",
+      "sas_var": "LAB_ORDER_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "14",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "SPECIMEN_DATE",
+      "sas_var": "SPECIMEN_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "15",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "SPECIMEN_TIME",
+      "sas_var": "SPECIMEN_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "16",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "RESULT_TIME",
+      "sas_var": "RESULT_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "17",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "RESULT_QUAL",
+      "sas_var": "RESULT_QUAL",
+      "dc_name": "LAB_L3_QUAL",
+      "ord": "18",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "RESULT_NUM",
+      "sas_var": "RESULT_NUM",
+      "dc_name": "LAB_L3_LOINC_RESULT_NUM",
+      "ord": "19",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "RESULT_MODIFIER",
+      "sas_var": "RESULT_MODIFIER",
+      "dc_name": "LAB_L3_MOD",
+      "ord": "20",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "RESULT_UNIT",
+      "sas_var": "RESULT_UNIT",
+      "dc_name": "LAB_L3_UNIT",
+      "ord": "21",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "NORM_MODIFIER_LOW",
+      "sas_var": "NORM_MODIFIER_LOW",
+      "dc_name": "LAB_L3_LOW",
+      "ord": "22",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "NORM_MODIFIER_HIGH",
+      "sas_var": "NORM_MODIFIER_HIGH",
+      "dc_name": "LAB_L3_HIGH",
+      "ord": "23",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "ABN_IND",
+      "sas_var": "ABN_IND",
+      "dc_name": "LAB_L3_ABN",
+      "ord": "24",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "LAB_LOINC_SOURCE",
+      "sas_var": "LAB_LOINC_SOURCE",
+      "dc_name": "LAB_L3_LSOURCE",
+      "ord": "25",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "LAB_RESULT_SOURCE",
+      "sas_var": "LAB_RESULT_SOURCE",
+      "dc_name": "LAB_L3_RSOURCE",
+      "ord": "26",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "LAB_RESULT_CM",
+      "column": "RESULT_SNOMED",
+      "sas_var": "RESULT_SNOMED",
+      "dc_name": "LAB_L3_SNOMED",
+      "ord": "27",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "ENCOUNTERID",
+      "sas_var": "RX_ENCOUNTERID",
+      "dc_name": "PRES_L3_N",
+      "ord": "28",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_PROVIDERID",
+      "sas_var": "RX_PROVIDERID",
+      "dc_name": "PRES_L3_N",
+      "ord": "29",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_ORDER_DATE",
+      "sas_var": "RX_ORDER_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "30",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_ORDER_TIME",
+      "sas_var": "RX_ORDER_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "31",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_START_DATE",
+      "sas_var": "RX_START_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "32",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_END_DATE",
+      "sas_var": "RX_END_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "33",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_DAYS_SUPPLY_GROUP",
+      "sas_var": "RX_DAYS_SUPPLY_GROUP",
+      "dc_name": "PRES_L3_SUPDIST2",
+      "ord": "34",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_FREQUENCY",
+      "sas_var": "RX_FREQUENCY",
+      "dc_name": "PRES_L3_FREQ",
+      "ord": "35",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_BASIS",
+      "sas_var": "RX_BASIS",
+      "dc_name": "PRES_L3_BASIS",
+      "ord": "36",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RXNORM_CUI",
+      "sas_var": "RXNORM_CUI",
+      "dc_name": "PRES_L3_RXCUI",
+      "ord": "37",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_QUANTITY",
+      "sas_var": "RX_QUANTITY",
+      "dc_name": "PRES_L3_RXQTY_DIST",
+      "ord": "38",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_REFILLS",
+      "sas_var": "RX_REFILLS",
+      "dc_name": "PRES_L3_RXREFILL_DIST",
+      "ord": "39",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_DOSE_ORDERED",
+      "sas_var": "RX_DOSE_ORDERED",
+      "dc_name": "PRES_L3_RXDOSEODR_DIST",
+      "ord": "40",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_DOSE_ORDERED_UNIT",
+      "sas_var": "RX_DOSE_ORDERED_UNIT",
+      "dc_name": "PRES_L3_RXDOSEODRUNIT",
+      "ord": "41",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_DOSE_FORM",
+      "sas_var": "RX_DOSE_FORM",
+      "dc_name": "PRES_L3_RXDOSEFORM",
+      "ord": "42",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_PRN_FLAG",
+      "sas_var": "RX_PRN_FLAG",
+      "dc_name": "PRES_L3_PRNFLAG",
+      "ord": "43",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_ROUTE",
+      "sas_var": "RX_ROUTE",
+      "dc_name": "PRES_L3_ROUTE",
+      "ord": "44",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_SOURCE",
+      "sas_var": "RX_SOURCE",
+      "dc_name": "PRES_L3_SOURCE",
+      "ord": "45",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PRESCRIBING",
+      "column": "RX_DISPENSE_AS_WRITTEN",
+      "sas_var": "RX_DISPENSE_AS_WRITTEN",
+      "dc_name": "PRES_L3_DISPASWRTN",
+      "ord": "46",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DISPENSING",
+      "column": "PRESCRIBINGID",
+      "sas_var": "PRESCRIBINGID",
+      "dc_name": "DISP_L3_N",
+      "ord": "47",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DISPENSING",
+      "column": "DISPENSE_SUP_GROUP",
+      "sas_var": "DISPENSE_SUP_GROUP",
+      "dc_name": "DISP_L3_SUPDIST2",
+      "ord": "48",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DISPENSING",
+      "column": "DISPENSE_DOSE_DISP",
+      "sas_var": "DISPENSE_DOSE_DISP",
+      "dc_name": "DISP_L3_DOSE_DIST",
+      "ord": "49",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DISPENSING",
+      "column": "DISPENSE_ROUTE",
+      "sas_var": "DISPENSE_ROUTE",
+      "dc_name": "DISP_L3_ROUTE",
+      "ord": "51",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DISPENSING",
+      "column": "DISPENSE_SOURCE",
+      "sas_var": "DISPENSE_SOURCE",
+      "dc_name": "DISP_L3_SOURCE",
+      "ord": "52",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DISPENSING",
+      "column": "DISPENSE_AMT",
+      "sas_var": "DISPENSE_AMT",
+      "dc_name": "DISP_L3_DISPAMT_DIST",
+      "ord": "53",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "CONDITION",
+      "column": "REPORT_DATE",
+      "sas_var": "REPORT_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "55",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "CONDITION",
+      "column": "RESOLVE_DATE",
+      "sas_var": "RESOLVE_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "56",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "CONDITION",
+      "column": "ONSET_DATE",
+      "sas_var": "ONSET_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "57",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "CONDITION",
+      "column": "CONDITION_STATUS",
+      "sas_var": "CONDITION_STATUS",
+      "dc_name": "COND_L3_STATUS",
+      "ord": "58",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "CONDITION",
+      "column": "CONDITION_SOURCE",
+      "sas_var": "CONDITION_SOURCE",
+      "dc_name": "COND_L3_SOURCE",
+      "ord": "59",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "CONDITION",
+      "column": "CONDITION_TYPE",
+      "sas_var": "CONDITION_TYPE",
+      "dc_name": "COND_L3_TYPE",
+      "ord": "60",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROVIDER",
+      "column": "PROVIDER_NPI",
+      "sas_var": "PROVIDER_NPI",
+      "dc_name": "PROV_L3_N",
+      "ord": "77",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROVIDER",
+      "column": "PROVIDER_NPI_FLAG",
+      "sas_var": "PROVIDER_NPI_FLAG",
+      "dc_name": "PROV_L3_NPIFLAG",
+      "ord": "78",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROVIDER",
+      "column": "PROVIDER_SPECIALTY_PRIMARY",
+      "sas_var": "PROVIDER_SPECIALTY_PRIMARY",
+      "dc_name": "PROV_L3_SPECIALTY",
+      "ord": "79",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PROVIDER",
+      "column": "PROVIDER_SEX",
+      "sas_var": "PROVIDER_SEX",
+      "dc_name": "PROV_L3_SEX",
+      "ord": "80",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "ENCOUNTERID",
+      "sas_var": "MEDADMIN_ENCOUNTERID",
+      "dc_name": "MEDADM_L3_N",
+      "ord": "81",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "PRESCRIBINGID",
+      "sas_var": "MEDADMIN_PRESCRIBINGID",
+      "dc_name": "MEDADM_L3_N",
+      "ord": "82",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_PROVIDERID",
+      "sas_var": "MEDADMIN_PROVIDERID",
+      "dc_name": "MEDADM_L3_N",
+      "ord": "83",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_DOSE_ADMIN",
+      "sas_var": "MEDADMIN_DOSE_ADMIN",
+      "dc_name": "MEDADM_L3_DOSEADM",
+      "ord": "84",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_DOSE_ADMIN_UNIT",
+      "sas_var": "MEDADMIN_DOSE_ADMIN_UNIT",
+      "dc_name": "MEDADM_L3_DOSEADMUNIT",
+      "ord": "85",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_ROUTE",
+      "sas_var": "MEDADMIN_ROUTE",
+      "dc_name": "MEDADM_L3_ROUTE",
+      "ord": "86",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_SOURCE",
+      "sas_var": "MEDADMIN_SOURCE",
+      "dc_name": "MEDADM_L3_SOURCE",
+      "ord": "87",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_CODE",
+      "sas_var": "MEDADMIN_CODE",
+      "dc_name": "MEDADM_L3_CODE_TYPE",
+      "ord": "88",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_START_TIME",
+      "sas_var": "MEDADMIN_START_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "88.1",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_STOP_DATE",
+      "sas_var": "MEDADMIN_STOP_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "88.2",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_STOP_TIME",
+      "sas_var": "MEDADMIN_STOP_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "88.3",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "MED_ADMIN",
+      "column": "MEDADMIN_TYPE",
+      "sas_var": "MEDADMIN_TYPE",
+      "dc_name": "MEDADM_L3_TYPE",
+      "ord": "89",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "ENCOUNTERID",
+      "sas_var": "OBSCLIN_ENCOUNTERID",
+      "dc_name": "OBSCLIN_L3_N",
+      "ord": "90",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_PROVIDERID",
+      "sas_var": "OBSCLIN_PROVIDERID",
+      "dc_name": "OBSCLIN_L3_N",
+      "ord": "91",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_SOURCE",
+      "sas_var": "OBSCLIN_SOURCE",
+      "dc_name": "OBSCLIN_L3_SOURCE",
+      "ord": "92",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_START_TIME",
+      "sas_var": "OBSCLIN_START_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "93",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_STOP_DATE",
+      "sas_var": "OBSCLIN_STOP_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "94",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_STOP_TIME",
+      "sas_var": "OBSCLIN_STOP_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "95",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_CODE",
+      "sas_var": "OBSCLIN_CODE",
+      "dc_name": "OBSCLIN_L3_CODE_TYPE",
+      "ord": "96",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_TYPE",
+      "sas_var": "OBSCLIN_TYPE",
+      "dc_name": "OBSCLIN_L3_TYPE",
+      "ord": "97",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_RESULT_QUAL",
+      "sas_var": "OBSCLIN_RESULT_QUAL",
+      "dc_name": "OBSCLIN_L3_QUAL",
+      "ord": "98",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_RESULT_MODIFIER",
+      "sas_var": "OBSCLIN_RESULT_MODIFIER",
+      "dc_name": "OBSCLIN_L3_MOD",
+      "ord": "99",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_CLIN",
+      "column": "OBSCLIN_ABN_IND",
+      "sas_var": "OBSCLIN_ABN_IND",
+      "dc_name": "OBSCLIN_L3_ABN",
+      "ord": "101",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "ENCOUNTERID",
+      "sas_var": "OBSGEN_ENCOUNTERID",
+      "dc_name": "OBSGEN_L3_N",
+      "ord": "102",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_PROVIDERID",
+      "sas_var": "OBSGEN_PROVIDERID",
+      "dc_name": "OBSGEN_L3_N",
+      "ord": "103",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_SOURCE",
+      "sas_var": "OBSGEN_SOURCE",
+      "dc_name": "OBSGEN_L3_SOURCE",
+      "ord": "104",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_START_TIME",
+      "sas_var": "OBSGEN_START_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "105",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_STOP_DATE",
+      "sas_var": "OBSGEN_STOP_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "106",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_STOP_TIME",
+      "sas_var": "OBSGEN_STOP_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "107",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_CODE",
+      "sas_var": "OBSGEN_CODE",
+      "dc_name": "OBSGEN_L3_CODE_TYPE",
+      "ord": "108",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_TYPE",
+      "sas_var": "OBSGEN_TYPE",
+      "dc_name": "OBSGEN_L3_TYPE",
+      "ord": "109",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_RESULT_QUAL",
+      "sas_var": "OBSGEN_RESULT_QUAL",
+      "dc_name": "OBSGEN_L3_QUAL",
+      "ord": "110",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_RESULT_MODIFIER",
+      "sas_var": "OBSGEN_RESULT_MODIFIER",
+      "dc_name": "OBSGEN_L3_MOD",
+      "ord": "111",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "OBS_GEN",
+      "column": "OBSGEN_ABN_IND",
+      "sas_var": "OBSGEN_ABN_IND",
+      "dc_name": "OBSGEN_L3_ABN",
+      "ord": "113",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_USE",
+      "sas_var": "ADDRESS_USE",
+      "dc_name": "LDSADRS_L3_ADRSUSE",
+      "ord": "114",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_TYPE",
+      "sas_var": "ADDRESS_TYPE",
+      "dc_name": "LDSADRS_L3_ADRSTYPE",
+      "ord": "115",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "COUNTY_FIPS",
+      "sas_var": "COUNTY_FIPS",
+      "dc_name": "LDSADRS_L3_COUNTYFIPS",
+      "ord": "116",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_CITY",
+      "sas_var": "ADDRESS_CITY",
+      "dc_name": "LDSADRS_L3_ADRSCITY",
+      "ord": "117",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_STATE",
+      "sas_var": "ADDRESS_STATE",
+      "dc_name": "LDSADRS_L3_ADRSSTATE",
+      "ord": "118",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_ZIP5",
+      "sas_var": "ADDRESS_ZIP5",
+      "dc_name": "LDSADRS_L3_ADRSZIP5",
+      "ord": "119",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_ZIP9",
+      "sas_var": "ADDRESS_ZIP9",
+      "dc_name": "LDSADRS_L3_ADRSZIP9",
+      "ord": "120",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "CURRENT_ADDRESS_FLAG",
+      "sas_var": "CURRENT_ADDRESS_FLAG",
+      "dc_name": "LDSADRS_L3_CURRENT",
+      "ord": "120.1",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "RUCA_ZIP",
+      "sas_var": "RUCA_ZIP",
+      "dc_name": "LDSADRS_L3_RUCAZIP",
+      "ord": "120.2",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "STATE_FIPS",
+      "sas_var": "STATE_FIPS",
+      "dc_name": "LDSADRS_L3_STATEFIPS",
+      "ord": "120.3",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_COUNTY",
+      "sas_var": "ADDRESS_COUNTY",
+      "dc_name": "LDSADRS_L3_N",
+      "ord": "120.4",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_PERIOD_START",
+      "sas_var": "ADDRESS_PERIOD_START",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "121",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LDS_ADDRESS_HISTORY",
+      "column": "ADDRESS_PERIOD_END",
+      "sas_var": "ADDRESS_PERIOD_END",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "122",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "ENCOUNTERID",
+      "sas_var": "IMMUNE_ENCOUNTERID",
+      "dc_name": "IMMUNE_L3_N",
+      "ord": "123",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "PROCEDURESID",
+      "sas_var": "PROCEDURESID",
+      "dc_name": "IMMUNE_L3_N",
+      "ord": "124",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_PROVIDERID",
+      "sas_var": "VX_PROVIDERID",
+      "dc_name": "IMMUNE_L3_N",
+      "ord": "125",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_RECORD_DATE",
+      "sas_var": "VX_RECORD_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "126",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_ADMIN_DATE",
+      "sas_var": "VX_ADMIN_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "127",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_CODE_TYPE",
+      "sas_var": "VX_CODE_TYPE",
+      "dc_name": "IMMUNE_L3_CODETYPE",
+      "ord": "129",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_STATUS",
+      "sas_var": "VX_STATUS",
+      "dc_name": "IMMUNE_L3_STATUS",
+      "ord": "130",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_STATUS_REASON",
+      "sas_var": "VX_STATUS_REASON",
+      "dc_name": "IMMUNE_L3_STATUSREASON",
+      "ord": "131",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_SOURCE",
+      "sas_var": "VX_SOURCE",
+      "dc_name": "IMMUNE_L3_SOURCE",
+      "ord": "132",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_DOSE",
+      "sas_var": "VX_DOSE",
+      "dc_name": "IMMUNE_L3_DOSE_DIST",
+      "ord": "133",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_DOSE_UNIT",
+      "sas_var": "VX_DOSE_UNIT",
+      "dc_name": "IMMUNE_L3_DOSEUNIT",
+      "ord": "134",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_ROUTE",
+      "sas_var": "VX_ROUTE",
+      "dc_name": "IMMUNE_L3_ROUTE",
+      "ord": "135",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_BODY_SITE",
+      "sas_var": "VX_BODY_SITE",
+      "dc_name": "IMMUNE_L3_BODYSITE",
+      "ord": "136",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_MANUFACTURER",
+      "sas_var": "VX_MANUFACTURER",
+      "dc_name": "IMMUNE_L3_MANUFACTURER",
+      "ord": "137",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_LOT_NUM",
+      "sas_var": "VX_LOT_NUM",
+      "dc_name": "IMMUNE_L3_LOTNUM",
+      "ord": "138",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "IMMUNIZATION",
+      "column": "VX_EXP_DATE",
+      "sas_var": "VX_EXP_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "139",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "LAB_FACILITYID",
+      "sas_var": "LAB_FACILITYID",
+      "dc_name": "LABHIST_L3_N",
+      "ord": "140",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "SEX",
+      "sas_var": "SEX",
+      "dc_name": "LABHIST_L3_SEXDIST",
+      "ord": "141",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "RACE",
+      "sas_var": "RACE",
+      "dc_name": "LABHIST_L3_RACEDIST",
+      "ord": "142",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "AGE_MIN_WKS",
+      "sas_var": "AGE_MIN_WKS",
+      "dc_name": "LABHIST_L3_MIN_WKS",
+      "ord": "143",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "AGE_MAX_WKS",
+      "sas_var": "AGE_MAX_WKS",
+      "dc_name": "LABHIST_L3_MAX_WKS",
+      "ord": "144",
+      "missing_kind": "stat_null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "RESULT_UNIT",
+      "sas_var": "LH_RESULT_UNIT",
+      "dc_name": "LABHIST_L3_UNIT",
+      "ord": "145",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "NORM_MODIFIER_LOW",
+      "sas_var": "LH_NORM_MODIFIER_LOW",
+      "dc_name": "LABHIST_L3_LOW",
+      "ord": "146",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "NORM_MODIFIER_HIGH",
+      "sas_var": "LH_NORM_MODIFIER_HIGH",
+      "dc_name": "LABHIST_L3_HIGH",
+      "ord": "148",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "PERIOD_START",
+      "sas_var": "PERIOD_START",
+      "dc_name": "LABHIST_L3_PDSTART_Y",
+      "ord": "149",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "LAB_HISTORY",
+      "column": "PERIOD_END",
+      "sas_var": "PERIOD_END",
+      "dc_name": "LABHIST_L3_PDEND_Y",
+      "ord": "150",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXT_DOSE_FORM",
+      "sas_var": "EXT_DOSE_FORM",
+      "dc_name": "EXTMED_L3_RXDOSEFORM",
+      "ord": "152",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXT_DOSE_ORDERED_UNIT",
+      "sas_var": "EXT_DOSE_ORDERED_UNIT",
+      "dc_name": "EXTMED_L3_RXDOSE_UNIT",
+      "ord": "153",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXT_ROUTE",
+      "sas_var": "EXT_ROUTE",
+      "dc_name": "EXTMED_L3_ROUTE",
+      "ord": "154",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "RXNORM_CUI",
+      "sas_var": "EXTMED_RXNORM_CUI",
+      "dc_name": "EXTMED_L3_RXCUI",
+      "ord": "155",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXTMED_SOURCE",
+      "sas_var": "EXTMED_SOURCE",
+      "dc_name": "EXTMED_L3_SOURCE",
+      "ord": "156",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXT_BASIS",
+      "sas_var": "EXT_BASIS",
+      "dc_name": "EXTMED_L3_BASIS",
+      "ord": "157",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXT_PAT_START_DATE",
+      "sas_var": "EXT_PAT_START_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "160",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXT_END_DATE",
+      "sas_var": "EXT_END_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "160.1",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "EXTERNAL_MEDS",
+      "column": "EXT_PAT_END_DATE",
+      "sas_var": "EXT_PAT_END_DATE",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "160.2",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PAT_RELATIONSHIP",
+      "column": "RELATIONSHIP_START",
+      "sas_var": "RELATIONSHIP_START",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "161",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PAT_RELATIONSHIP",
+      "column": "RELATIONSHIP_END",
+      "sas_var": "RELATIONSHIP_END",
+      "dc_name": "XTBL_L3_DATES",
+      "ord": "162",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_CAT",
+      "sas_var": "PRO_CAT",
+      "dc_name": "PROCM_L3_CAT",
+      "ord": "163",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_CODE",
+      "sas_var": "PRO_CODE",
+      "dc_name": "PROCM_L3_CODE_TYPE",
+      "ord": "164",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_FULLNAME",
+      "sas_var": "PRO_FULLNAME",
+      "dc_name": "PROCM_L3_FULLNAME",
+      "ord": "165",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_METHOD",
+      "sas_var": "PRO_METHOD",
+      "dc_name": "PROCM_L3_METHOD",
+      "ord": "166",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_MODE",
+      "sas_var": "PRO_MODE",
+      "dc_name": "PROCM_L3_MODE",
+      "ord": "167",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_NAME",
+      "sas_var": "PRO_NAME",
+      "dc_name": "PROCM_L3_NAME",
+      "ord": "168",
+      "missing_kind": "null_or_missing",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_SOURCE",
+      "sas_var": "PRO_SOURCE",
+      "dc_name": "PROCM_L3_SOURCE",
+      "ord": "169",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": true
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_TYPE",
+      "sas_var": "PRO_TYPE",
+      "dc_name": "PROCM_L3_TYPE",
+      "ord": "170",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "ENCOUNTERID",
+      "sas_var": "PROCM_ENCOUNTERID",
+      "dc_name": "PROCM_L3_N",
+      "ord": "171",
+      "missing_kind": "null_n",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "PRO_CM",
+      "column": "PRO_TIME",
+      "sas_var": "PRO_TIME",
+      "dc_name": "XTBL_L3_TIMES",
+      "ord": "172",
+      "missing_kind": "nmiss",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH_CAUSE",
+      "column": "DEATH_CAUSE_CODE",
+      "sas_var": "DEATH_CAUSE_CODE",
+      "dc_name": "DEATHC_L3_CODE",
+      "ord": "173",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH_CAUSE",
+      "column": "DEATH_CAUSE_CONFIDENCE",
+      "sas_var": "DEATH_CAUSE_CONFIDENCE",
+      "dc_name": "DEATHC_L3_CONF",
+      "ord": "174",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH_CAUSE",
+      "column": "DEATH_CAUSE_SOURCE",
+      "sas_var": "DEATH_CAUSE_SOURCE",
+      "dc_name": "DEATHC_L3_SOURCE",
+      "ord": "175",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    },
+    {
+      "table": "DEATH_CAUSE",
+      "column": "DEATH_CAUSE_TYPE",
+      "sas_var": "DEATH_CAUSE_TYPE",
+      "dc_name": "DEATHC_L3_TYPE",
+      "ord": "176",
+      "missing_kind": "category",
+      "denom_filter": "none",
+      "is_flag": false
+    }
+  ]
+}

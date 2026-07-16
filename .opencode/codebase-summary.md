@@ -162,11 +162,101 @@ characterization_on_snowflake/
 
 4. **Streamlit version compatibility**: Snowflake's bundled Streamlit runtime is older. `st.rerun()` requires fallback to `st.experimental_rerun()`. `st.date_input(value=None)` doesn't work (date pickers default to today).
 
+## Resume State
+
+> Update this section at the start/end of every session. Contains active-work context that would be lost when a session drops.
+
+**As of 2026-07-15 (session paused — pre-deploy backups complete, ready to deploy):**
+
+- **Branch**: `add-dc-3-18-and-dc-1-13-snomed`, commit `45eea6d` — pushed to `origin` (GitHub, the only remote — AGENTS.md's Bitbucket reference is stale/wrong)
+- **Working tree**: 69 files show as modified but are file-mode flips only (100644 -> 100755). Zero content changes. Safe to ignore, or run `git config core.fileMode false` locally to hide them.
+- **Untracked**: `.opencode/package.json`, `.opencode/package-lock.json` (not investigated, probably OpenCode-managed).
+
+**What this deploy changes:** Commit `45eea6d` touched exactly 4 Snowflake artifacts:
+1. `SP_DC_3_18` — NEW procedure (XTBL_L3_CFIPSZIP_5Y)
+2. `SP_DC_3_03` — added `PRO_CODE` to PRO_CM required-not-null list
+3. `POTENTIAL_CODE_ERRORS` — SNOMED expansion (DIAGNOSIS/CONDITION/LAB_RESULT_CM/OBS_CLIN)
+4. `DCQ_CHECK_REGISTRY` — new DC_3_18 row + updated DC_1_13 SOURCE_TABLES (48 -> 49 rows)
+
+**Deploy tooling (all committed to repo in `45eea6d`):**
+- `deploy_selective.py` — focused deploy of ONLY the 4 artifacts above (does NOT touch other 46 procs, Streamlit app, or ref tables). Uses same `.env` / RSA key auth as `push_snowflake_assets.py`.
+- `rollback/01_capture_current_state.sql` — pre-deploy backup script (already run).
+- `rollback/02_restore_if_broken.sql` — recovery script (only needed if deploy breaks).
+
+**Pre-deploy backups — COMPLETE:**
+- [x] Ran `GET_DDL` on `SP_DC_3_03(VARCHAR x8)` in Snowsight — user should save output to `rollback/captured_20260715_dc_3_03.sql` (needs confirmation).
+- [x] Ran `GET_DDL` on `POTENTIAL_CODE_ERRORS(VARCHAR,VARCHAR,VARCHAR)` in Snowsight — user should save output to `rollback/captured_20260715_pce.sql` (needs confirmation).
+- [x] Ran `CREATE OR REPLACE TABLE CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715 CLONE CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY;`
+- [x] Verified backup row count = **48** (matches expected pre-deploy count).
+
+**NEXT STEPS — resume here:**
+
+1. **(User task)** Confirm the two `GET_DDL` outputs were saved to files in `rollback/` — check terminal scrollback / Snowsight worksheet history.
+
+2. **Dry-run the deploy:**
+   ```
+   python deploy_selective.py --dry-run
+   ```
+   Expected: no errors, prints what would happen, does not touch Snowflake.
+
+3. **Real deploy:**
+   ```
+   python deploy_selective.py
+   ```
+   Runs 4 operations in order: CREATE OR REPLACE SP_DC_3_18, SP_DC_3_03, POTENTIAL_CODE_ERRORS, then TRUNCATE + COPY INTO on the registry from `snowflake/DCQ_CHECK_REGISTRY_data_full.json`. Verifies final row count = 49.
+
+4. **Post-deploy smoke SQL in Snowsight:**
+   ```sql
+   SELECT COUNT(*) FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY;                    -- expect 49
+   SELECT CHECK_NAME, PROC_NAME, ENABLED FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY
+     WHERE CHECK_NAME IN ('DC_3_18','DC_1_13','DC_3_03');
+   SHOW PROCEDURES LIKE 'SP_DC_3_18' IN SCHEMA CHARACTERIZATION.DCQ_CHECKS;
+   ```
+
+5. **Direct-call each of the 3 procs against a real target DB** (user has NOT yet picked which — likely a `CHAR_*` or `STAGE_*` database and its CDM schema, probably `PUBLIC`). Use `TEST_3_18`, `TEST_3_03`, `TEST_PCE` as RUN_IDs. Templates in the previous session's message:
+   - `CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_18('<DB>','<SCHEMA>','TEST_3_18','ALL',NULL,NULL,NULL,NULL);`
+   - `CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03('<DB>','<SCHEMA>','TEST_3_03','PRO_CM',NULL,NULL,NULL,NULL);`
+   - `CALL CHARACTERIZATION.DCQ_CHECKS.POTENTIAL_CODE_ERRORS('<DB>','<SCHEMA>','ALL');`
+
+6. **Query the result tables** to confirm output shape:
+   - `SELECT * FROM <DB>.CHARACTERIZATION_DCQ.DCQ_RESULTS WHERE RUN_ID LIKE 'TEST_%';`
+   - `SELECT * FROM <DB>.CHARACTERIZATION.CODE_SUMMARY WHERE SOURCE_TABLE IN ('LAB_RESULT_CM','OBS_CLIN') ORDER BY SOURCE_TABLE, CODE_TYPE;` — should show new SNOMED (`SM`) code_type rows.
+
+7. **Streamlit end-to-end test:** Snowsight -> Streamlit -> `characterization_runner` (or `streamlit run streamlit/app.py` locally). Tab 1 (SP_RUN_DCQ), Mode=`ROW_NUM`, run each of `3.18`, `1.13`, `3.03` individually with `Max parallel=1`. Confirm the progress bar completes and results tab shows rows. No `streamlit/app.py` redeploy needed — app was not touched by this commit and reads registry at runtime.
+
+8. **(Optional) Full-registry parallel run** with Mode=`ALL`, Max parallel=10, to confirm no regressions on the other 46 checks. Expect 49 SUCCEEDED (or 48 + 1 known-broken SP_DC_2_07 failure — see Known Issues).
+
+9. **Merge + housekeeping:**
+   - `git checkout main && git merge --no-ff add-dc-3-18-and-dc-1-13-snomed && git push origin main`
+   - Delete branch on GitHub.
+   - Once satisfied: `DROP TABLE CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715;`
+
+**Rollback recipes if deploy breaks something:**
+- **Proc SQL bad:** Nothing to do — Snowflake's CREATE OR REPLACE is atomic; the OLD version stays deployed if the new SQL is malformed.
+- **Proc has a logic bug that survives compilation:** paste the captured `GET_DDL` output back and run it in Snowsight.
+- **Registry corrupted/empty after TRUNCATE + COPY failure:** run `rollback/02_restore_if_broken.sql` (swaps `DCQ_CHECK_REGISTRY` back from the clone).
+- **Full undo of the whole deploy:** `DROP PROCEDURE SP_DC_3_18(VARCHAR x8);` + paste both captured DDLs + run `02_restore_if_broken.sql`.
+
+**Doc drift noted (fix later, not urgent):**
+- `AGENTS.md` "Git & Remotes" section references a Bitbucket remote that doesn't exist. Only remote is GitHub `origin`.
+
 ## Change History
 
 > Newest entries first.
 
-- **2026-07-15**: **DC 3.03 PRO_CODE added.** SAS v16 `edc_report.sas` added `PRO_CODE` (and `PRO_SOURCE`) to the Table IVD threshold-flag list. Ported the intent to Snowflake by adding `PRO_CODE` to the `PRO_CM` required-not-null list in `SP_DC_3_03.sql`. PRO_SOURCE not added (per user).
+- **2026-07-16**: **DC 3.03 full port to SAS v16.** Rewrote DC 3.03 as two distinct checks matching the SAS report structure. Not yet deployed (repo-only session).
+  - **New procs:** `SP_DC_3_03_IVC` (SAS Table IVC, required tables) and `SP_DC_3_03_IVD` (SAS Table IVD, optional tables). Both auto-generated from `sas_code/parse_dc_3_03_catalog.py` reading `sas_code/extracted_newest/infolder/edc_report.sas`.
+  - **IVC scope:** 52 fields across DEMOGRAPHIC (17), ENROLLMENT (2), ENCOUNTER (15), DIAGNOSIS (10), PROCEDURES (8). Flag list (10 fields): BIRTH_DATE, SEX, DX_ORIGIN, DX_SOURCE, DIA_ENCOUNTERID (ENCOUNTERID in DIAGNOSIS), DISCHARGE_DATE, DISCHARGE_DISPOSITION, PRO_ENCOUNTERID (ENCOUNTERID in PROCEDURES), PX_DATE, PX_SOURCE.
+  - **IVD scope:** 161 fields across 17 tables. Flag list (13 fields): DEATH_SOURCE, ENCOUNTERID, LAB_RESULT_SOURCE, MEDADMIN_ENCOUNTERID, MEDADMIN_CODE, MEDADMIN_SOURCE, RX_ENCOUNTERID, RX_ORDER_DATE, RX_SOURCE, PRO_CODE, PRO_SOURCE, VITAL_ENCOUNTERID, VITAL_SOURCE.
+  - **Missing-value semantics fixed:** each field is categorized by SAS numerator clause into one of six "kinds": `category` (NULL/blank + NI/UN/OT), `null_n` (NULL/blank only, for ID/FK cols), `nmiss` (NULL only, for dates/numerics), `null_or_missing`/`cross_null_or_missing`/`stat_null_or_missing` (NULL/blank variants for specific SAS clauses). Previous SP_DC_3_03 only counted NULL/blank, missing all NI/UN/OT — which was why SAS-flagged DISCHARGE_DISPOSITION failures never appeared in the app.
+  - **Denominator filter:** 6 ENCOUNTER fields (DISCHARGE_DATE, DISCHARGE_DISPOSITION, DISCHARGE_STATUS, DRG, ADMITTING_SOURCE, PDX) restrict denominator to `ENC_TYPE in ('IP','EI')` per SAS, both in numerator and denominator. Previous proc had no such filter.
+  - **Threshold:** flag when `MISSING_PCT >= 10` AND field is in the SAS-specified flag list. Previous proc flagged any `> 0%` for all fields.
+  - **Registry:** replaced the two duplicate `DC_3_03` rows (same CHECK_ID, different EDC_TABLE) with distinct `DC_3_03_IVC` and `DC_3_03_IVD` rows. Registry still 49 rows. Duplicate CHECK_ID / same-name race condition eliminated.
+  - **Legacy:** old `SP_DC_3_03.sql` moved to `sql/dcq_checks/procedures/_archive/` (kept for reference). Deploy script (`deploy_selective.py`) updated to CREATE OR REPLACE the two new procs and `DROP PROCEDURE IF EXISTS SP_DC_3_03(VARCHAR x8)` in Snowflake.
+  - **Files added:** `sas_code/parse_dc_3_03_catalog.py`, `sas_code/dc_3_03_catalog.json`, `sas_code/dc_3_03_ivc_catalog.md`, `sql/dcq_checks/procedures/SP_DC_3_03_IVC.sql`, `sql/dcq_checks/procedures/SP_DC_3_03_IVD.sql`, `sas_code/infolder_newest.zip`.
+  - **Files modified:** `snowflake/DCQ_CHECK_REGISTRY_data_full.json` (DC_3_03 rows replaced), `deploy_selective.py` (proc list + DROP step).
+  - **Files moved:** `sql/dcq_checks/procedures/SP_DC_3_03.sql` -> `sql/dcq_checks/procedures/_archive/SP_DC_3_03.sql`.
+- **2026-07-15**: **DC 3.03 PRO_CODE added.** SAS v16 `edc_report.sas` added `PRO_CODE` (and `PRO_SOURCE`) to the Table IVD threshold-flag list. Ported the intent to Snowflake by adding `PRO_CODE` to the `PRO_CM` required-not-null list in `SP_DC_3_03.sql`. PRO_SOURCE not added (per user). *[SUPERSEDED 2026-07-16 by the full IVC/IVD port.]*
 - **2026-07-15**: **DC 3.18 added.** New check `SP_DC_3_18` implements SAS `XTBL_L3_CFIPSZIP_5Y` (Table IB row 3.18). Cohort = PATIDs with F2F encounters (ENC_TYPE in ED/EI/IP/OS/AV) in past 5 years (ADMIT_DATE in [today-63mo, today-3mo]) joined to LDS_ADDRESS_HISTORY rows with CURRENT_ADDRESS_FLAG='Y'. Emits patient-level counts (PATIENTS_N, ADDRESS_ZIP5_N, COUNTY_FIPS_N, BOTH_N), derived PCT_BOTH, and BOTH_FIPSZIP_FLAG (fires when PATIENTS_N>0 AND (PCT_BOTH<80 OR BOTH_N=0)). Registry row `DC_3_18` added. Registry now 49 rows.
 - **2026-07-15**: **DC 1.13 SNOMED expansion (SAS PCE v16).** `potential_code_errors.sql` extended:
   - DIAGNOSIS: filter now `dx_type IN ('09','10','SM')`; adds SNOMED heuristic (length 6-18, no alpha, not all-zeros/all-nines).

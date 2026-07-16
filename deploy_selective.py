@@ -1,12 +1,17 @@
 """Selective Snowflake deploy - pushes ONLY the files changed for the
-DC 3.18 / DC 1.13 SNOMED / DC 3.03 PRO_CODE work.
+DC 3.18 / DC 1.13 SNOMED / DC 3.03 IVC+IVD full port work.
 
 Files deployed:
   - sql/dcq_checks/procedures/SP_DC_3_18.sql            (new proc)
-  - sql/dcq_checks/procedures/SP_DC_3_03.sql            (PRO_CODE added)
+  - sql/dcq_checks/procedures/SP_DC_3_03_IVC.sql        (new proc: SAS Table IVC port)
+  - sql/dcq_checks/procedures/SP_DC_3_03_IVD.sql        (new proc: SAS Table IVD port)
   - sql/dcq_checks/procedures/potential_code_errors.sql (SNOMED expansion)
   - snowflake/DCQ_CHECK_REGISTRY_data_full.json         (new DC_3_18 row +
-                                                         DC_1_13 SOURCE_TABLES)
+                                                         DC_1_13 SOURCE_TABLES +
+                                                         DC_3_03_IVC/IVD replaces DC_3_03)
+
+Also drops the legacy proc in Snowflake:
+  - CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03 (superseded by IVC/IVD split)
 
 Files NOT deployed:
   - The other 45 SP_DC_*.sql procedures.
@@ -17,14 +22,15 @@ Files NOT deployed:
 Reuses the same .env / RSA key auth as push_snowflake_assets.py.
 
 Usage:
-    python deploy_selective.py             # deploy all four artifacts
+    python deploy_selective.py             # deploy all artifacts + drop legacy
     python deploy_selective.py --dry-run   # show what would happen, no changes
-    python deploy_selective.py --procs     # only redeploy the 3 procs
+    python deploy_selective.py --procs     # only redeploy procs + drop legacy
     python deploy_selective.py --registry  # only reload the registry table
 
 Safety:
   - Uses CREATE OR REPLACE PROCEDURE; each proc is one atomic Snowflake
     transaction. If a proc's SQL is bad, the OLD version stays.
+  - The DROP of the legacy SP_DC_3_03 uses IF EXISTS, so re-running is safe.
   - The registry load does TRUNCATE + COPY INTO. If the JSON parse fails
     partway, the registry ends up empty. That is why 01_capture_current_state.sql
     creates a clone backup before running this script.
@@ -57,8 +63,18 @@ ROLE = os.getenv("SNOWFLAKE_ROLE")
 # Files we intend to deploy. These paths are relative to BASE_DIR.
 PROC_FILES = [
     "sql/dcq_checks/procedures/SP_DC_3_18.sql",
-    "sql/dcq_checks/procedures/SP_DC_3_03.sql",
+    "sql/dcq_checks/procedures/SP_DC_3_03_IVC.sql",
+    "sql/dcq_checks/procedures/SP_DC_3_03_IVD.sql",
     "sql/dcq_checks/procedures/potential_code_errors.sql",
+]
+
+# Procedures to DROP (superseded / renamed). Uses IF EXISTS so re-running is safe.
+# Signature must match exactly for Snowflake to resolve.
+LEGACY_DROPS = [
+    "DROP PROCEDURE IF EXISTS "
+    f"{os.getenv('SNOWFLAKE_DATABASE') or 'CHARACTERIZATION'}"
+    ".DCQ_CHECKS.SP_DC_3_03("
+    "VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR, VARCHAR)",
 ]
 REGISTRY_JSON = "snowflake/DCQ_CHECK_REGISTRY_data_full.json"
 REGISTRY_TABLE = f"{DATABASE}.DCQ.DCQ_CHECK_REGISTRY"
@@ -133,6 +149,23 @@ def deploy_procs(cs, dry_run: bool) -> list[tuple[str, bool, str]]:
             results.append((rel_path, True, "OK - CREATE OR REPLACE succeeded"))
         except Exception as e:
             results.append((rel_path, False, f"ERROR: {e}"))
+    return results
+
+
+def drop_legacy_procs(cs, dry_run: bool) -> list[tuple[str, bool, str]]:
+    """DROP procedures that have been superseded/renamed. Uses IF EXISTS so
+    re-running is safe. Called before deploy_procs so if the drop fails for a
+    real reason, we haven't yet re-created things."""
+    results = []
+    for stmt in LEGACY_DROPS:
+        if dry_run:
+            results.append((stmt, True, "DRY-RUN would execute"))
+            continue
+        try:
+            cs.execute(stmt)
+            results.append((stmt, True, "OK - DROP succeeded (or did not exist)"))
+        except Exception as e:
+            results.append((stmt, False, f"ERROR: {e}"))
     return results
 
 
@@ -247,6 +280,15 @@ def main():
     all_ok = True
 
     if do_procs:
+        print("\nDropping legacy procedures...")
+        for stmt, ok, msg in drop_legacy_procs(cs, args.dry_run):
+            marker = "  OK  " if ok else "  FAIL"
+            # Truncate long DROP statements for display
+            display = stmt if len(stmt) < 80 else stmt[:77] + "..."
+            print(f"  [{marker}] {display}: {msg}")
+            if not ok:
+                all_ok = False
+
         print("\nDeploying procedures...")
         for rel, ok, msg in deploy_procs(cs, args.dry_run):
             marker = "  OK  " if ok else "  FAIL"

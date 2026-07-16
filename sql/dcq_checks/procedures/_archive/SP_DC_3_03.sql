@@ -166,7 +166,7 @@ const specs = [
   { table: ''PRESCRIBING'', cols: [''PATID'', ''PRESCRIBINGID''] },
   { table: ''PROCEDURES'', cols: [''PATID'', ''PROCEDURESID'', ''PX'', ''PX_TYPE''] },
   { table: ''PROVIDER'', cols: [''PROVIDERID''] },
-  { table: ''PRO_CM'', cols: [''PATID'', ''PRO_CM_ID'', ''PRO_CODE'', ''PRO_DATE''] },
+  { table: ''PRO_CM'', cols: [''PATID'', ''PRO_CM_ID'', ''PRO_CODE'', ''PRO_DATE'', ''PRO_SOURCE''] },
   { table: ''VITAL'', cols: [''MEASURE_DATE'', ''PATID'', ''VITALID'', ''VITAL_SOURCE''] }
 ];
 
