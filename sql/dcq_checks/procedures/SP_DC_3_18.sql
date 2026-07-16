@@ -178,6 +178,9 @@ lds_agg AS (
   GROUP BY PATID
 ),
 enc_5yr AS (
+  -- SAS ENCOUNTER_PERIOD dataset (data_curation_tables.sas ~1435-1449) then
+  -- ENC_L3_DASH2 (~3967-4015) with distinct=y and period=''5 yrs''. This is the
+  -- SAS denom_fipszip used at edc_report.sas line 883-884.
   SELECT DISTINCT PATID
   FROM ${encFq}
   WHERE ENC_TYPE IN (${encTypeList})
@@ -187,9 +190,9 @@ enc_5yr AS (
     AND DATEADD(month, ${cohortEndMonths}, CURRENT_DATE())
 ),
 cohort AS (
-  -- SAS: merge lds_address_history_f2f_current (in=inl) with encounter_period 5yrs (in=ine),
-  --      keep only where inl AND ine, then require at least one of the two valids
-  --      (SAS filters lds rows to valid_address_zip5=''Y'' OR valid_county_fips=''Y'').
+  -- SAS cfipszip_5y dataset (data_curation_tables.sas 4676-4703).
+  -- Merge: lds_address_history_f2f_current (current=''Y'' AND (valid_z=Y OR valid_f=Y))
+  --        with encounter_period ''5 yrs'' -- keep only where inl AND ine.
   SELECT
     l.PATID,
     l.valid_address_zip5,
@@ -199,7 +202,8 @@ cohort AS (
   WHERE l.valid_address_zip5 = 1 OR l.valid_county_fips = 1
 )
 SELECT
-  COUNT(DISTINCT PATID) AS patients_n,
+  (SELECT COUNT(*) FROM enc_5yr) AS f2f_denom_n,
+  COUNT(DISTINCT PATID) AS intersect_n,
   COUNT(DISTINCT CASE WHEN valid_address_zip5 = 1 THEN PATID END) AS address_zip5_n,
   COUNT(DISTINCT CASE WHEN valid_county_fips = 1 THEN PATID END) AS county_fips_n,
   COUNT(DISTINCT CASE WHEN valid_address_zip5 = 1 AND valid_county_fips = 1 THEN PATID END) AS both_n
@@ -213,10 +217,17 @@ if (!rs.next()) {
   return ''DC 3.18 ERROR: cohort query returned no rows'';
 }
 
-const patients = Number(rs.getColumnValue(1)) || 0;
-const zip5 = Number(rs.getColumnValue(2)) || 0;
-const fips = Number(rs.getColumnValue(3)) || 0;
-const both = Number(rs.getColumnValue(4)) || 0;
+// SAS Table IB row 3.18 semantics (edc_report.sas lines 883-905):
+//   denom  = ENC_L3_DASH2 period=''5 yrs'' distinct_patid_n
+//          = F2F 5yr cohort size BEFORE joining LDS_ADDRESS_HISTORY.
+//   numer  = XTBL_L3_CFIPSZIP_5Y variable=''ADDRESS_ZIP5 and COUNTY_FIPS'' distinct_patid_n
+//          = intersection (F2F 5yr) AND (LDS current AND valid_zip5 AND valid_fips).
+//   pct    = numer/denom * 100 ; threshold fires when pct<80 OR numer=0 (with denom>0).
+const patients = Number(rs.getColumnValue(1)) || 0;   // denominator = F2F 5yr cohort (SAS denom_fipszip)
+const intersectN = Number(rs.getColumnValue(2)) || 0; // XTBL_L3_CFIPSZIP_5Y PATIENTS distinct_patid_n
+const zip5 = Number(rs.getColumnValue(3)) || 0;
+const fips = Number(rs.getColumnValue(4)) || 0;
+const both = Number(rs.getColumnValue(5)) || 0;
 const pctBoth = (patients > 0) ? (both / patients) * 100.0 : null;
 // Exception when denom>0 and (pct < 80 OR numerator = 0). Mirrors edc_report.sas Table IB row 3.18.
 const flag = (patients > 0 && ((pctBoth !== null && pctBoth < thresholdPctLt) || both === 0)) ? 1 : 0;
@@ -236,21 +247,26 @@ const details = {
   },
   counts: {
     patients_n: patients,
+    intersect_lds_valid_n: intersectN,
     address_zip5_n: zip5,
     county_fips_n: fips,
     both_n: both
   },
   pct_both: pctBoth,
   threshold_pct_lt: thresholdPctLt,
-  definition: ''For patients with F2F encounters (ED/EI/IP/OS/AV) in the past 5 years, percent whose CURRENT address record has BOTH a valid ADDRESS_ZIP5 AND a valid COUNTY_FIPS.'',
-  reference: ''PCORnet CDM DC 3.18 / Table IB / XTBL_L3_CFIPSZIP_5Y (SAS data_curation_tables.sas v16 lines 4664-4726).''
+  definition: ''SAS Table IB row 3.18: numerator = distinct PATIDs whose CURRENT LDS_ADDRESS_HISTORY row has BOTH a valid ADDRESS_ZIP5 AND a valid COUNTY_FIPS, among the denominator; denominator = distinct PATIDs with an F2F encounter (ED/EI/IP/OS/AV) in the past 5 years (SAS denom_fipszip = ENC_L3_DASH2 period 5yrs distinct_patid_n).'',
+  reference: ''PCORnet CDM DC 3.18 / Table IB / XTBL_L3_CFIPSZIP_5Y (SAS data_curation_tables.sas v16 lines 4664-4726; edc_report.sas v16 lines 878-908).''
 };
 
 const codeType = ''XTBL_L3_CFIPSZIP_5Y'';
+// PATIENTS_N is the SAS Table IB row 3.18 denominator = distinct F2F 5yr PATIDs.
 insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType, ''PATIENTS_N'', patients, String(patients), thresholdPctLt, false, details);
 insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType, ''ADDRESS_ZIP5_N'', zip5, String(zip5), thresholdPctLt, false, details);
 insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType, ''COUNTY_FIPS_N'', fips, String(fips), thresholdPctLt, false, details);
 insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType, ''BOTH_N'', both, String(both), thresholdPctLt, false, details);
+// INTERSECT_LDS_VALID_N = SAS XTBL_L3_CFIPSZIP_5Y PATIENTS distinct_patid_n
+// (kept for traceability - this is the count of PATIDs in the merged cfipszip_5y dataset).
+insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType, ''INTERSECT_LDS_VALID_N'', intersectN, String(intersectN), thresholdPctLt, false, details);
 insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType, ''PCT_BOTH'', pctBoth,
   (pctBoth === null ? null : String(pctBoth)), thresholdPctLt, false, details);
 insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType, ''BOTH_FIPSZIP_FLAG'',
@@ -258,7 +274,7 @@ insertMetric(resultsTbl, bindsBase, edcTable, ''LDS_ADDRESS_HISTORY'', codeType,
 
 insertMetric(resultsTbl, bindsBase, (only === ''ALL'' ? ''ALL'' : only), ''ALL'', ''ALL'', ''STATUS'',
   null, ''OK'', thresholdPctLt, false,
-  { target_table: only, patients_n: patients, both_n: both, pct_both: pctBoth });
+  { target_table: only, patients_n: patients, intersect_lds_valid_n: intersectN, both_n: both, pct_both: pctBoth });
 
-return `DC 3.18 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only} patients_n=${patients} both_n=${both}`;
+return `DC 3.18 finished RUN_ID=${RUN_ID} TARGET_TABLE=${only} patients_n=${patients} both_n=${both} pct_both=${pctBoth}`;
 ';
