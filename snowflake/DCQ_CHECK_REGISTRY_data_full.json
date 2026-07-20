@@ -978,5 +978,25 @@
     "METRICS": "[\n  \"RECORDS_PREV_N\",\n  \"RECORDS_CUR_N\",\n  \"RECORDS_PCT_CHANGE\",\n  \"RECORDS_DECREASE_FLAG\",\n  \"DISTINCT_CODES_PREV_N\",\n  \"DISTINCT_CODES_CUR_N\",\n  \"DISTINCT_CODES_PCT_CHANGE\",\n  \"DISTINCT_CODES_DECREASE_FLAG\",\n  \"ANY_DECREASE_FLAG\"\n]",
     "EXCEPTION_METRICS": "[\n  \"RECORDS_DECREASE_FLAG\",\n  \"DISTINCT_CODES_DECREASE_FLAG\",\n  \"ANY_DECREASE_FLAG\"\n]",
     "THRESHOLDS": "{\n  \"exclude_category\": \"09\",\n  \"pct_change_lt\": -5\n}"
+  },
+  {
+    "CHECK_ID": "7426b567b4f1c1a2de03b5bc5cfdefdd",
+    "CHECK_NAME": "DC_1_22",
+    "ROW_NUM": "1.22",
+    "ROW_NUM_STR": "1.22",
+    "PART": "part1",
+    "EDC_TABLE": "Table IID",
+    "DESCRIPTION": "Patients have multiple current physical addresses in the LDS_ADDRESS_HISTORY table (a PATID has multiple ADDRESSIDs where CURRENT_ADDRESS_FLAG='Y')",
+    "PROC_NAME": "CHARACTERIZATION.DCQ_CHECKS.SP_DC_1_22",
+    "SOURCE_TABLES": "[\n  \"LDS_ADDRESS_HISTORY\"\n]",
+    "ENABLED": true,
+    "ROW_NUM_CANON": "1.22",
+    "DOC_SUMMARY": "DC 1.22 (Table IID): flags when at least one PATID has multiple LDS_ADDRESS_HISTORY rows where CURRENT_ADDRESS_FLAG='Y'. Implements SAS row 11 (LDSADRS_L3_CURRENT category=Y): fires when RECORD_N > DISTINCT_PATID_N in the CURRENT_ADDRESS_FLAG='Y' slice.",
+    "DOC_RUN": "Driver: CALL CHARACTERIZATION.DCQ.SP_RUN_DCQ('<DB_PARAM>', SCHEMA_NAME, 'ROW_NUM', '1.22', 'part1', TARGET_TABLE|'ALL'). Direct: CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_1_22(DB_PARAM, SCHEMA_NAME, RUN_ID, TARGET_TABLE|'ALL'). TARGET_TABLE may be ALL or LDS_ADDRESS_HISTORY.",
+    "DOC_OUTPUT": "Writes to <DB_PARAM>.CHARACTERIZATION_DCQ.DCQ_RESULTS where ROW_NUM=1.22. SOURCE_TABLE=LDS_ADDRESS_HISTORY; CODE_TYPE=LDSADRS_L3_CURRENT.",
+    "DOC_INTERPRETATION": "CURRENT_ROW_N = rows where CURRENT_ADDRESS_FLAG='Y'. CURRENT_PATID_DISTINCT_N = distinct PATIDs in that slice. PATIDS_WITH_MULTIPLE_N = count of PATIDs with 2+ rows in that slice. EXCESS_ROWS_N = CURRENT_ROW_N - CURRENT_PATID_DISTINCT_N. MULTI_CURRENT_FLAG=1 (EXCEPTION_FLAG=TRUE) when EXCESS_ROWS_N > 0 (i.e. at least one PATID has multiple current-flag rows).",
+    "METRICS": "[\n  \"CURRENT_ROW_N\",\n  \"CURRENT_PATID_DISTINCT_N\",\n  \"PATIDS_WITH_MULTIPLE_N\",\n  \"EXCESS_ROWS_N\",\n  \"MULTI_CURRENT_FLAG\"\n]",
+    "EXCEPTION_METRICS": "[\n  \"MULTI_CURRENT_FLAG\"\n]",
+    "THRESHOLDS": "{\n  \"excess_rows_n_gt\": 0\n}"
   }
 ]

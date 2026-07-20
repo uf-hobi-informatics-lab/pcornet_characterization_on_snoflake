@@ -1,168 +1,156 @@
-# DC 3.03 Full Port to SAS v16 — Session Notes
+# Session Notes — 2026-07-16
 
-**Session date:** 2026-07-16
 **Branch:** `add-dc-3-18-and-dc-1-13-snomed`
-**Status:** Repo edits complete. Nothing deployed to Snowflake yet.
+**Latest commit:** `66f241d` (local only — NOT pushed to `origin` yet)
+**Deploy status:** All fixes live in Snowflake. Branch NOT merged to `main` yet.
 
 ---
 
-## What we set out to do
+## Where we ended today
 
-Fix DC 3.03 in the Streamlit app so it flags the same data quality issues that SAS flags. Specifically: SAS was flagging DISCHARGE_DISPOSITION as a failure in the user's data, but the Streamlit app was not.
+Full deploy and validation cycle completed for two SAS-parity fixes:
 
-## Root cause identified
+### 1. DC 3.03 full port (IVC + IVD split) — DEPLOYED and VERIFIED
+- Committed as `ad05f23` earlier today.
+- Deployed today via `deploy_selective.py` — DROP legacy `SP_DC_3_03(VARCHAR x8)`, CREATE OR REPLACE `SP_DC_3_18`, `SP_DC_3_03_IVC`, `SP_DC_3_03_IVD`, `POTENTIAL_CODE_ERRORS`, TRUNCATE + COPY INTO `DCQ_CHECK_REGISTRY` (49 rows).
+- Additionally dropped a stray 4-arg `SP_DC_3_03(VARCHAR,VARCHAR,VARCHAR,VARCHAR)` overload left over from an earlier era.
+- Verified against `CHAR_UAB.OVID_20260612`:
+  - `SP_DC_3_03_IVC` (147s, evaluated=52, skipped=0). **DISCHARGE_DISPOSITION now flagged at 10.02% missing — SAS parity achieved.** Also flags `DIAGNOSIS.DX_ORIGIN`.
+  - `SP_DC_3_03_IVD` (480s, evaluated=159/161, 2 optional cols skipped). Flags PRESCRIBING.ENCOUNTERID and PRO_CM.PRO_SOURCE.
+  - `POTENTIAL_CODE_ERRORS` (217s, 0 validation issues). SNOMED (SM) rows now present for CONDITION/LAB_RESULT_CM/OBS_CLIN/OBS_GEN.
 
-The old `SP_DC_3_03.sql` procedure had structural differences from SAS v16:
+### 2. DC 3.18 denominator bug — FIXED, DEPLOYED, VERIFIED
+- Discovered mid-session when user tested DC 3.18 via Streamlit against `CHAR_UFH.PUBLIC` and got a `PCT_BOTH` of 89.2% (no flag), while SAS reported ~19.9% (flag).
+- **Root cause:** the previous `SP_DC_3_18` used the F2F ∩ LDS_valid intersection as both denominator and numerator source, so `PCT_BOTH` was always inflated. SAS Table IB row 3.18 (edc_report.sas 878-908) uses `denom_fipszip` = distinct PATIDs with F2F encounter in past 5yr (i.e., `ENC_L3_DASH2 period='5 yrs' distinct_patid_n`) — this is the size of the F2F cohort **before** joining LDS_ADDRESS_HISTORY.
+- **Fix:** committed as `66f241d`. `SP_DC_3_18.sql` now returns:
+  - `PATIENTS_N` = F2F 5yr cohort (SAS denom_fipszip)
+  - `INTERSECT_LDS_VALID_N` = intersection count (new metric, this was the old buggy `PATIENTS_N`)
+  - `ADDRESS_ZIP5_N`, `COUNTY_FIPS_N`, `BOTH_N` = unchanged
+  - `PCT_BOTH = BOTH_N / PATIENTS_N * 100` (now correct)
+- Deployed and re-verified on 3 targets:
+  - `CHAR_UFH.PUBLIC`: PATIENTS_N=1,521,233 / BOTH_N=302,041 / PCT_BOTH=19.86% / **FLAG=1** — matches user's SAS output exactly
+  - `CHAR_UAB.PUBLIC`: 823,199 / 789,209 / 95.87% / no flag
+  - `CHAR_UAB.OVID_20260612`: 360,004 / 328,617 / 91.28% / no flag
+- Final Streamlit run RUN_ID `63a7c61e-cf3f-48a5-857d-4af03be5a80e` (on CHAR_UFH.PUBLIC, 2026-07-16 17:35): confirmed all 8 rows present in DCQ_RESULTS with SUCCEEDED status.
+- Stale pre-fix DC_3_18 rows cleaned up: deleted 28 rows across 4 RUN_IDs (2 in CHAR_UFH: `b95c6ac0-...`, `TEST_3_18_UFH_20260716`; 2 in CHAR_UAB: `TEST_3_18_20260716`, `TEST_3_18_PUBLIC_20260716`). The Streamlit-triggered `b95c6ac0` DCQ_RUNS row was kept (may have other check statuses); its DCQ_CHECK_LOG entry for DC_3_18 and its 7 DCQ_RESULTS rows were removed. TEST_* RUN_IDs were fully purged from RUNS, CHECK_LOG, and RESULTS.
 
-1. **Only counted NULL / empty string as missing.** SAS also counts `NI`, `UN`, `OT` as missing for category-kind fields. DISCHARGE_DISPOSITION was 30%+ `NI` in the user's data — SAS flagged it, our app read it as 0% missing.
-2. **No IP/EI denominator restriction.** SAS restricts denominators for 6 ENCOUNTER fields (DISCHARGE_DATE, DISCHARGE_DISPOSITION, DISCHARGE_STATUS, DRG, ADMITTING_SOURCE, PDX) to `ENC_TYPE IN ('IP','EI')`. Our old proc counted against all encounters.
-3. **Wrong threshold.** SAS flags when `perc >= 10%`. Our old proc flagged anything `> 0%`.
-4. **Race condition in the registry.** The registry had two `DC_3_03` rows (both with same CHECK_ID, one for `Table IVC` and one for `Table IVD`) — both invoked `SP_DC_3_03` in parallel with the same RUN_ID, causing DELETE + INSERT races on `DCQ_RESULTS`.
+### 3. Environment setup work (also uncommitted repo edits)
+- Created `.env` at repo root (gitignored) with `SNOWFLAKE_ACCOUNT=ufl-oneflorida_azure_eastus2`, `SNOWFLAKE_USER=allison_burns_opencode`, `SNOWFLAKE_PRIVATE_KEY_PATH=/processing/home/allison.burns/.snowflake/rsa_key_opencode.p8`, `SNOWFLAKE_ROLE=1FL-AZURE-DB-USERS`, `SNOWFLAKE_WAREHOUSE=XS_GEN2`, `SNOWFLAKE_DATABASE=CHARACTERIZATION`.
+- Generated an unencrypted RSA 2048 keypair at `~/.snowflake/rsa_key_opencode.p8` + `.pub` (perms 600/644).
+- User registered public key on Snowflake via `ALTER USER allison_burns_opencode SET RSA_PUBLIC_KEY=...` (fingerprint `Jw+HkT/YN7eY+dxpVK4mKOMIhp+54XD7FK4H1vx1KXA=`).
+- **Edited `deploy_selective.py`** to support optional passphrase-file (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE_FILE`) or inline passphrase (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`) env vars. Backwards compatible — no-op when neither is set. **This change is uncommitted.**
 
-## What we built
+---
 
-**Two new procedures** replacing the old `SP_DC_3_03`:
+## Current git state (2026-07-16 end-of-day)
 
-- `SP_DC_3_03_IVC` — SAS Table IVC scope: DEMOGRAPHIC, ENROLLMENT, ENCOUNTER, DIAGNOSIS, PROCEDURES (52 fields, 10 flag fields)
-- `SP_DC_3_03_IVD` — SAS Table IVD scope: 17 optional tables (VITAL, DEATH, LAB_RESULT_CM, PRESCRIBING, DISPENSING, CONDITION, PROVIDER, MED_ADMIN, OBS_CLIN, OBS_GEN, LDS_ADDRESS_HISTORY, IMMUNIZATION, LAB_HISTORY, EXTERNAL_MEDS, PAT_RELATIONSHIP, PRO_CM, DEATH_CAUSE). 161 fields, 13 flag fields.
+- Branch: `add-dc-3-18-and-dc-1-13-snomed`
+- Local commits ahead of `origin`: **1** (`66f241d` "Fix DC 3.18 denominator: use F2F 5yr cohort (SAS denom_fipszip)")
+- Working tree dirty:
+  - `M deploy_selective.py` — passphrase-file support I added; harmless, backwards-compatible
+  - `M .opencode/session-2026-07-16-dc-3-03-port.md` — the OLD session notes file. Being superseded by THIS file.
+  - `?? .opencode/package.json`, `?? .opencode/package-lock.json` — OpenCode-managed, ignore
+- `main` unchanged from before this multi-day work.
 
-**IVC flag fields** (perc >= 10% triggers exception):
-BIRTH_DATE, SEX, DX_ORIGIN, DX_SOURCE, DIA_ENCOUNTERID (ENCOUNTERID in DIAGNOSIS), DISCHARGE_DATE, DISCHARGE_DISPOSITION, PRO_ENCOUNTERID (ENCOUNTERID in PROCEDURES), PX_DATE, PX_SOURCE
+**Nothing pushed. Nothing merged to main.**
 
-**IVD flag fields** (perc >= 10% triggers exception):
-DEATH_SOURCE, ENCOUNTERID, LAB_RESULT_SOURCE, MEDADMIN_ENCOUNTERID, MEDADMIN_CODE, MEDADMIN_SOURCE, RX_ENCOUNTERID, RX_ORDER_DATE, RX_SOURCE, **PRO_CODE**, **PRO_SOURCE**, VITAL_ENCOUNTERID, VITAL_SOURCE
+---
 
-**Missing-value definition per field kind** (six categories, derived from which SAS numerator clause matches):
-- `category` — NULL, empty, OR value in ('NI','UN','OT'). Applied to distribution-style fields like SEX, ENC_TYPE, DX_SOURCE.
-- `null_n` — NULL or empty only. Applied to ID/FK columns (ENCOUNTERID, PROVIDERID, FACILITYID).
-- `nmiss` — NULL only. Applied to date/time/numeric columns (BIRTH_DATE, PX_DATE, MEASURE_TIME).
-- `null_or_missing`, `cross_null_or_missing`, `stat_null_or_missing` — variants of NULL-or-empty for specific SAS clauses.
+## Snowflake state (2026-07-16 end-of-day)
 
-**Denominators:**
-- `none` — COUNT(*) of the parent table.
-- `ip_ei` — COUNT(rows with UPPER(TRIM(ENC_TYPE)) IN ('IP','EI')) on the parent table. Both numerator and denominator are restricted.
+### Procedures in `CHARACTERIZATION.DCQ_CHECKS`
+- `SP_DC_3_18` — with 2026-07-16 17:XX fix (correct SAS Table IB denominator)
+- `SP_DC_3_03_IVC` — new
+- `SP_DC_3_03_IVD` — new
+- `POTENTIAL_CODE_ERRORS` — with SNOMED expansion from earlier session
+- Legacy `SP_DC_3_03(VARCHAR x8)` and `SP_DC_3_03(VARCHAR x4)` — DROPPED
 
-## Files changed (in the repo, NOT in Snowflake yet)
+### Registry `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY`
+- 49 rows.
+- DC_3_03_IVC + DC_3_03_IVD (distinct CHECK_IDs) replaced the old DC_3_03 duplicate.
+- DC_3_18 added (SAS XTBL_L3_CFIPSZIP_5Y).
+- DC_1_13 SOURCE_TABLES expanded with LAB_RESULT_CM, OBS_CLIN, OBS_GEN.
+- Backup clone `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715` still exists (48 rows, pre-deploy). Drop when confident.
 
-**New files:**
-- `sql/dcq_checks/procedures/SP_DC_3_03_IVC.sql` — 327 lines
-- `sql/dcq_checks/procedures/SP_DC_3_03_IVD.sql` — 436 lines
-- `sas_code/parse_dc_3_03_catalog.py` — SAS-to-JSON extractor (parses `edc_report.sas` newest, produces the catalog the two procs are generated from)
-- `sas_code/dc_3_03_catalog.json` — extracted catalog (audit trail; regenerate with `python3 sas_code/parse_dc_3_03_catalog.py`)
+### DCQ output tables (CHAR_UAB, CHAR_UFH)
+- `CHARACTERIZATION_DCQ.{DCQ_RUNS, DCQ_CHECK_LOG, DCQ_RESULTS}` all populated with today's test runs plus historical runs.
+- Latest verified DC_3_18 runs still present: `TEST_3_18_v2_CHAR_UFH_PUBLIC`, `TEST_3_18_v2_CHAR_UAB_PUBLIC`, `TEST_3_18_v2_CHAR_UAB_OVID_20260612`, and the Streamlit RUN_ID `63a7c61e-cf3f-48a5-857d-4af03be5a80e`. Stale pre-fix rows already deleted.
 
-**Modified files:**
-- `snowflake/DCQ_CHECK_REGISTRY_data_full.json` — replaced the two duplicate `DC_3_03` rows (same CHECK_ID) with distinct `DC_3_03_IVC` (CHECK_ID `4dcc7f7f1d8761f8bc8cb95418e8fa40`) + `DC_3_03_IVD` (CHECK_ID `ad244ef6de9f969425ea1f9e788fc494`). Registry stays at 49 rows.
-- `deploy_selective.py` — updated `PROC_FILES` to include the two new procs; added `LEGACY_DROPS` step (`DROP PROCEDURE IF EXISTS SP_DC_3_03(VARCHAR x8)`) that runs before proc deploy; updated header docstring.
-- `.opencode/codebase-summary.md` — added Change History entry dated 2026-07-16 documenting the port.
-- `.gitignore` — added `sas_code/extracted*/` (the extracted SAS source directories don't need to be tracked).
+---
 
-**Moved files:**
-- `sql/dcq_checks/procedures/SP_DC_3_03.sql` → `sql/dcq_checks/procedures/_archive/SP_DC_3_03.sql` (legacy proc, kept for reference)
-- `sas_code/dc_3_03_ivc_catalog.md` → `sas_code/_archive/dc_3_03_ivc_catalog.md` (mid-session review artifact, superseded by the JSON)
+## Resume plan for TOMORROW (2026-07-17): add DC 1.22
 
-**Ignored (kept locally, not committed):**
-- `sas_code/infolder.zip`, `sas_code/infolder_old.zip`, `sas_code/infolder_newest.zip` — SAS source zips
-- `sas_code/extracted/`, `sas_code/extracted_old/`, `sas_code/extracted_newest/` — extraction dirs (regenerate with `unzip sas_code/infolder_newest.zip -d sas_code/extracted_newest/`)
+User's stated intent: "add another new check, 1.22, and push the new code."
 
-## Verification done in-session
-
-- Both new procs pass brace/paren/bracket balance checks (no syntax issues in JS bodies).
-- Registry has no duplicate CHECK_NAMEs after edit (49 distinct rows).
-- Spot-checked catalog for correctness:
-  - `DISCHARGE_DISPOSITION`: table=ENCOUNTER, kind=category, denom=ip_ei, flag=True ✓
-  - `DISCHARGE_DATE`: table=ENCOUNTER, kind=category, denom=ip_ei, flag=True ✓
-  - `BIRTH_DATE`: table=DEMOGRAPHIC, kind=nmiss, denom=none, flag=True ✓
-  - `PRO_CODE`: table=PRO_CM, kind=null_or_missing, flag=True ✓
-  - `PRO_SOURCE`: table=PRO_CM, kind=category, flag=True ✓
-  - `MEDADMIN_ENCOUNTERID`: table=MED_ADMIN, kind=null_n, flag=True ✓
-- `python3 deploy_selective.py --dry-run` succeeds and shows correct 6-step deploy plan (see below).
-
-## Deploy plan (NOT YET RUN)
-
-`python3 deploy_selective.py` will execute in order:
-
-1. `DROP PROCEDURE IF EXISTS CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03(VARCHAR x8)`
-2. `CREATE OR REPLACE PROCEDURE SP_DC_3_18` (unchanged — was already staged from prior session)
-3. `CREATE OR REPLACE PROCEDURE SP_DC_3_03_IVC` (new)
-4. `CREATE OR REPLACE PROCEDURE SP_DC_3_03_IVD` (new)
-5. `CREATE OR REPLACE PROCEDURE POTENTIAL_CODE_ERRORS` (unchanged — was already staged from prior session)
-6. `TRUNCATE + COPY INTO CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY` from the JSON (49 rows)
-
-**Backups** (already captured from the previous session, per resume state):
-- Registry clone: `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715` (48 rows — from before the DC 3.03 edits).
-- User was to save `GET_DDL` output for `SP_DC_3_03` and `POTENTIAL_CODE_ERRORS` to `rollback/captured_*.sql` — unconfirmed whether those files were actually saved.
-
-## Next steps (resume here)
-
-1. **Optional:** confirm the two GET_DDL captures from the previous session are saved to `rollback/`. If not, no big deal — worst case the legacy `SP_DC_3_03` can be recreated from `sql/dcq_checks/procedures/_archive/SP_DC_3_03.sql`.
-2. **Dry-run:**
+### Prep before starting
+1. Confirm which SAS check DC_1_22 corresponds to. Search the SAS source:
    ```
-   python3 deploy_selective.py --dry-run
+   grep -in "1\.22\|row=1\.22" sas_code/extracted_newest/infolder/edc_report.sas
    ```
-   Already passing as of this writing.
-3. **Real deploy:**
-   ```
-   python3 deploy_selective.py
-   ```
-4. **Post-deploy smoke SQL in Snowsight:**
-   ```sql
-   -- Registry state
-   SELECT COUNT(*) FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY;                   -- expect 49
-   SELECT CHECK_NAME, PROC_NAME, EDC_TABLE FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY
-     WHERE CHECK_NAME IN ('DC_3_03_IVC','DC_3_03_IVD','DC_3_18','DC_1_13');
+   Likely candidates: XTBL_L3_MISMATCH or a specific Table IA row. Read the SAS logic block, identify the numerator/denominator SAS macros used.
+2. Read the current `snowflake/DCQ_CHECK_REGISTRY_data_full.json` to see the schema for a new row (all the required fields: CHECK_ID, CHECK_NAME, ROW_NUM, PART, EDC_TABLE, DESCRIPTION, PROC_NAME, SOURCE_TABLES, ENABLED, THRESHOLDS, DOC_INTERPRETATION, etc.). Generate a stable CHECK_ID hash the same way the other rows were generated (probably md5 of some canonical fields — check `deploy_selective.py` or the last DC_3_18 addition for the pattern).
+3. Pick a template proc that's structurally similar to what 1.22 needs. Good candidates:
+   - `SP_DC_3_18.sql` — XTBL-style cross-table check with a threshold-flag output
+   - `SP_DC_1_13.sql` — table-list-driven code validation
+   - `SP_DC_3_03_IVC.sql` — per-field missing-fraction with flag threshold
 
-   -- Procedures exist
-   SHOW PROCEDURES LIKE 'SP_DC_3_03%' IN SCHEMA CHARACTERIZATION.DCQ_CHECKS;
-   -- Expect two rows: SP_DC_3_03_IVC and SP_DC_3_03_IVD. NOT SP_DC_3_03 (dropped).
-   ```
-5. **Direct-call test the two new procs against a real target DB** (user picks which — likely a `CHAR_*` or `STAGE_*` database and PUBLIC schema):
-   ```sql
-   CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03_IVC('<DB>','<SCHEMA>','TEST_IVC','ALL',NULL,NULL,NULL,NULL);
-   CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03_IVD('<DB>','<SCHEMA>','TEST_IVD','ALL',NULL,NULL,NULL,NULL);
-   ```
-6. **Verify DISCHARGE_DISPOSITION now flags** (the whole point of the port):
-   ```sql
-   SELECT SOURCE_TABLE, CODE_TYPE, METRIC, VALUE_STR, EXCEPTION_FLAG
-   FROM <DB>.CHARACTERIZATION_DCQ.DCQ_RESULTS
-   WHERE RUN_ID='TEST_IVC' AND CODE_TYPE='DISCHARGE_DISPOSITION'
-   ORDER BY METRIC;
-   -- Expect: DENOM_N (IP/EI encounters), MISSING_N (NULL/NI/UN/OT count),
-   --         MISSING_PCT, MISSING_FLAG=1 with EXCEPTION_FLAG=TRUE if >= 10%.
-   ```
-7. **Streamlit end-to-end test:** Snowsight → Streamlit → `characterization_runner`. Tab 1 (SP_RUN_DCQ), Mode=`CHECK_NAME`, run `DC_3_03_IVC` and `DC_3_03_IVD` individually. Confirm the progress bar completes and results tab shows rows.
-8. **Optional full run** with Mode=`ALL`, Max parallel=10, to confirm no regressions on the other 46 checks. Expect 49 SUCCEEDED (or 48 + 1 known-broken SP_DC_2_07 failure — see Known Issues in codebase-summary.md).
-9. **Merge + housekeeping:**
-   - `git checkout main && git merge --no-ff add-dc-3-18-and-dc-1-13-snomed && git push origin main`
-   - Delete the branch on GitHub.
-   - Once satisfied: `DROP TABLE CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715;`
+### Standard flow for adding a new check
+1. Create `sql/dcq_checks/procedures/SP_DC_1_22.sql` following the standard 8-param signature `(DB_PARAM, SCHEMA_NAME, RUN_ID, TARGET_TABLE, PREV_DB_PARAM, PREV_SCHEMA_NAME, START_DATE, END_DATE)`. Use `EXECUTE AS CALLER`, `LANGUAGE JAVASCRIPT`. Write to `${DB_PARAM}.CHARACTERIZATION_DCQ.DCQ_RESULTS`. Remember: single quotes inside `AS '...'` body must be doubled (`''`).
+2. Add a row to `snowflake/DCQ_CHECK_REGISTRY_data_full.json` (registry should end at 50 rows).
+3. Update `deploy_selective.py`'s `PROC_FILES` list to include `SP_DC_1_22.sql`.
+4. Test the SQL first via a dry-run of the WHERE/JOIN clauses in Snowsight before wrapping in the procedure.
+5. Deploy: `python3 deploy_selective.py --dry-run` then `python3 deploy_selective.py`.
+6. Test-call: `CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_1_22('CHAR_UFH','PUBLIC','TEST_1_22','ALL',NULL,NULL,NULL,NULL);` — verify results in `CHAR_UFH.CHARACTERIZATION_DCQ.DCQ_RESULTS`.
+7. Compare against SAS output for the same source (CHAR_UFH.PUBLIC is the user's SAS reference dataset — confirmed in this session).
+8. Streamlit end-to-end: run via `characterization_runner` in Snowsight, confirm UI shows correct values.
 
-## Rollback recipes (if deploy breaks something)
+### Push and merge
+Once DC 1.22 is verified working:
+1. `git add sql/dcq_checks/procedures/SP_DC_1_22.sql snowflake/DCQ_CHECK_REGISTRY_data_full.json deploy_selective.py` (deploy_selective.py has today's uncommitted passphrase support — bundle it in this next push or split into its own commit, up to user).
+2. Commit with a clear message.
+3. `git push origin add-dc-3-18-and-dc-1-13-snomed` — this also pushes today's `66f241d` DC 3.18 fix that we held on pushing.
+4. Then discuss merging the branch to `main`.
 
-- **A new proc has a compile error:** Snowflake's CREATE OR REPLACE is atomic; if the SQL is malformed, the old version stays. But the old `SP_DC_3_03` was already DROP'd by step 1 of the deploy, so if IVC/IVD fail to create you'd be missing DC 3.03 entirely. To restore: paste `sql/dcq_checks/procedures/_archive/SP_DC_3_03.sql` (with header quotes stripped) into Snowsight and run it. This recreates the legacy proc.
-- **A new proc compiles but has a logic bug at run time:** you can DROP the new proc and recreate the legacy one from `_archive/`.
-- **Registry corrupted/empty after TRUNCATE + COPY failure:** run `rollback/02_restore_if_broken.sql` (swaps `DCQ_CHECK_REGISTRY` back from the `_BACKUP_20260715` clone). NOTE: the clone has the OLD registry with duplicate DC_3_03 rows and no IVC/IVD split, so after restore you'd also need to drop the (now orphan) IVC/IVD procs to keep the state consistent.
-- **Full undo:**
-  ```sql
-  DROP PROCEDURE IF EXISTS CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03_IVC(VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR);
-  DROP PROCEDURE IF EXISTS CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03_IVD(VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR,VARCHAR);
-  -- Recreate legacy SP_DC_3_03 from sql/dcq_checks/procedures/_archive/SP_DC_3_03.sql
-  -- Then run rollback/02_restore_if_broken.sql to restore the pre-deploy registry.
-  ```
+### Housekeeping
+- Update `.opencode/codebase-summary.md` Change History section (newest entry first) to reflect DC 1.22 addition and today's DC 3.18 fix.
+- Optionally drop `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715` if we're confident in the rollout.
+- Optionally delete the archived legacy `sql/dcq_checks/procedures/_archive/SP_DC_3_03.sql` if no longer wanted for reference.
 
-## How to regenerate the catalog if SAS updates again
+### Environmental prerequisites (already set up, just verify)
+- `.env` at repo root with allison_burns_opencode credentials
+- RSA key at `/processing/home/allison.burns/.snowflake/rsa_key_opencode.p8` (unencrypted)
+- User `allison_burns_opencode` has public key registered in Snowflake with fingerprint `Jw+HkT/YN7eY+dxpVK4mKOMIhp+54XD7FK4H1vx1KXA=` and role `1FL-AZURE-DB-USERS`
 
-1. Drop the new SAS zip into `sas_code/` (e.g., `infolder_newer.zip`).
-2. `unzip sas_code/infolder_newer.zip -d sas_code/extracted_newest/` (overwrite existing).
-3. Edit `sas_code/parse_dc_3_03_catalog.py` — update the hard-coded lists (`CATEGORY_DCNAMES`, `NULL_N_DCNAMES`, `IVC_FLAG_VARS`, `IVD_FLAG_VARS`, etc.) to reflect any SAS changes. Verify the flag lists against the SAS source lines noted in the comments.
-4. `python3 sas_code/parse_dc_3_03_catalog.py` — regenerates `sas_code/dc_3_03_catalog.json`.
-5. Re-run the code-generation snippet (or write a small helper in the parser) to regenerate `SP_DC_3_03_IVC.sql` and `SP_DC_3_03_IVD.sql` from the JSON.
-6. `git diff` — spot-check the changes.
-7. Deploy.
+Quick connectivity test at start of tomorrow's session:
+```
+python3 -c "import sys; sys.path.insert(0,'.'); import deploy_selective as ds; conn=ds.get_connection(); cs=conn.cursor(); cs.execute('SELECT CURRENT_USER(), CURRENT_ROLE()'); print(cs.fetchone())"
+```
+Expected output: `('ALLISON_BURNS_OPENCODE', '1FL-AZURE-DB-USERS')`
 
-Currently there's no single-command "regenerate the procs from the JSON" — the generation was done inline in the session. If we do this again it's worth adding a `sas_code/generate_procs.py` script that reads `dc_3_03_catalog.json` and writes the two `.sql` files. Not urgent.
+---
 
-## Known issues / caveats
+## Known issues carried forward
 
-- **Field ambiguity for LAB_LOINC in IVD:** the catalog has TWO entries for `LAB_RESULT_CM.LAB_LOINC` — one as `null_or_missing` (LAB_L3_LOINC dc_name, checks whether the LOINC code is present) and one as `RESULT_NUM` mapped column (LAB_L3_LOINC_RESULT_NUM dc_name, checks NMISS of RESULT_NUM). The parser aliases the second one to CDM column `RESULT_NUM` per the SAS rename at line 8519. This is intentional but confusing — worth double-checking after deploy that both metrics appear in DCQ_RESULTS with distinct row identities.
-- **Pre-existing DC 3.03 registry duplicate:** the two `DC_3_03` rows had the same CHECK_ID hash (`7e707d95d8cf4f69e03b149c01d16a34`). This caused a race condition where SP_DC_3_03 ran twice in parallel with the same RUN_ID. The port eliminates this by giving IVC and IVD distinct CHECK_IDs.
-- **AGENTS.md doc drift:** references a Bitbucket remote that doesn't exist. Only remote is GitHub `origin`. Fix later, not urgent.
+1. **SP_DC_2_07**: Still has the SQL bug `ambiguous column name 'ADMIT_DATE'` — fails every run. Untouched today.
+2. **AGENTS.md doc drift**: References a Bitbucket remote that doesn't exist. Only remote is GitHub `origin`. Fix later, not urgent.
+3. **Snowpark thread safety**: `_get_new_connection()` in `streamlit/app.py` uses `.env` which doesn't exist in native Snowflake Streamlit. For Snowpark mode, threads share the session. May limit parallelism in native mode.
+4. **Unused code in `streamlit/app.py`**: `run_async_call()` and `run_query_threadsafe()` are no longer used and can be cleaned up.
+
+---
+
+## Reference materials from today
+
+- SAS source: `sas_code/extracted_newest/infolder/` (unzip from `infolder_newest.zip` if missing)
+- Key SAS files for check porting:
+  - `data_curation_base.sas` — macro definitions (%dash, %tag, %n_pct, %stat)
+  - `data_curation_tables.sas` — dataset construction and per-check DML
+  - `edc_report.sas` — Table IA/IB/IC formatting AND thresholding logic (this is where the flag/exception rules live, and where I found the DC 3.18 denominator bug today)
+  - `normalization.sas` — how SAS L3 outputs get materialized
+
+- Cheatsheet for SAS %dash cutoffs (from data_curation_base.sas lines 50-55):
+  - cutoff_dash = today - 3mo
+  - cutoff_dashyr1 = today - 15mo (1yr window: [today-15mo, today-3mo])
+  - cutoff_dashyr2 = today - 27mo (2yr)
+  - cutoff_dashyr3 = today - 39mo (3yr)
+  - cutoff_dashyr4 = today - 51mo (4yr)
+  - cutoff_dashyr5 = today - 63mo (5yr)

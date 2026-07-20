@@ -1,12 +1,13 @@
 """Selective Snowflake deploy - pushes ONLY the files changed for the
-DC 3.18 / DC 1.13 SNOMED / DC 3.03 IVC+IVD full port work.
+DC 3.18 / DC 1.13 SNOMED / DC 3.03 IVC+IVD / DC 1.22 port work.
 
 Files deployed:
   - sql/dcq_checks/procedures/SP_DC_3_18.sql            (new proc)
   - sql/dcq_checks/procedures/SP_DC_3_03_IVC.sql        (new proc: SAS Table IVC port)
   - sql/dcq_checks/procedures/SP_DC_3_03_IVD.sql        (new proc: SAS Table IVD port)
+  - sql/dcq_checks/procedures/SP_DC_1_22.sql            (new proc: SAS row 11 / LDSADRS_L3_CURRENT)
   - sql/dcq_checks/procedures/potential_code_errors.sql (SNOMED expansion)
-  - snowflake/DCQ_CHECK_REGISTRY_data_full.json         (new DC_3_18 row +
+  - snowflake/DCQ_CHECK_REGISTRY_data_full.json         (new DC_3_18 + DC_1_22 rows +
                                                          DC_1_13 SOURCE_TABLES +
                                                          DC_3_03_IVC/IVD replaces DC_3_03)
 
@@ -56,6 +57,8 @@ load_dotenv(BASE_DIR / ".env")
 ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
 USER = os.getenv("SNOWFLAKE_USER")
 PRIVATE_KEY_PATH = os.getenv("SNOWFLAKE_PRIVATE_KEY_PATH")
+PRIVATE_KEY_PASSPHRASE_FILE = os.getenv("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE_FILE")
+PRIVATE_KEY_PASSPHRASE = os.getenv("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE")
 WAREHOUSE = os.getenv("SNOWFLAKE_WAREHOUSE")
 DATABASE = os.getenv("SNOWFLAKE_DATABASE") or "CHARACTERIZATION"
 ROLE = os.getenv("SNOWFLAKE_ROLE")
@@ -65,6 +68,7 @@ PROC_FILES = [
     "sql/dcq_checks/procedures/SP_DC_3_18.sql",
     "sql/dcq_checks/procedures/SP_DC_3_03_IVC.sql",
     "sql/dcq_checks/procedures/SP_DC_3_03_IVD.sql",
+    "sql/dcq_checks/procedures/SP_DC_1_22.sql",
     "sql/dcq_checks/procedures/potential_code_errors.sql",
 ]
 
@@ -96,9 +100,21 @@ def check_env():
 
 
 def load_private_key():
+    passphrase = None
+    if PRIVATE_KEY_PASSPHRASE:
+        passphrase = PRIVATE_KEY_PASSPHRASE.encode("utf-8")
+    elif PRIVATE_KEY_PASSPHRASE_FILE:
+        pp_path = os.path.expanduser(str(PRIVATE_KEY_PASSPHRASE_FILE))
+        if not os.path.exists(pp_path):
+            sys.exit(f"Passphrase file not found at {pp_path}")
+        with open(pp_path, "rb") as pf:
+            # File may contain trailing whitespace/newline; strip only trailing
+            # whitespace so a passphrase containing internal whitespace is
+            # preserved.
+            passphrase = pf.read().rstrip(b"\r\n\t ")
     with open(os.path.expanduser(str(PRIVATE_KEY_PATH)), "rb") as f:
         return serialization.load_pem_private_key(
-            f.read(), password=None, backend=default_backend()
+            f.read(), password=passphrase, backend=default_backend()
         )
 
 

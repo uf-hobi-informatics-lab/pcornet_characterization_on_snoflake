@@ -166,76 +166,72 @@ characterization_on_snowflake/
 
 > Update this section at the start/end of every session. Contains active-work context that would be lost when a session drops.
 
-**As of 2026-07-15 (session paused — pre-deploy backups complete, ready to deploy):**
+**As of 2026-07-20 end-of-session (DC 1.22 added + deployed + verified; commit + push pending):**
 
-- **Branch**: `add-dc-3-18-and-dc-1-13-snomed`, commit `45eea6d` — pushed to `origin` (GitHub, the only remote — AGENTS.md's Bitbucket reference is stale/wrong)
-- **Working tree**: 69 files show as modified but are file-mode flips only (100644 -> 100755). Zero content changes. Safe to ignore, or run `git config core.fileMode false` locally to hide them.
-- **Untracked**: `.opencode/package.json`, `.opencode/package-lock.json` (not investigated, probably OpenCode-managed).
+- **Branch**: `add-dc-3-18-and-dc-1-13-snomed`
+- **Latest local commit**: `66f241d` "Fix DC 3.18 denominator: use F2F 5yr cohort (SAS denom_fipszip)". Today's DC 1.22 work still uncommitted — one bundled commit + push pending.
+- **Origin state**: last pushed commit is still `ad05f23` (DC 3.03 IVC/IVD port).
+- **`main`**: unchanged.
 
-**What this deploy changes:** Commit `45eea6d` touched exactly 4 Snowflake artifacts:
-1. `SP_DC_3_18` — NEW procedure (XTBL_L3_CFIPSZIP_5Y)
-2. `SP_DC_3_03` — added `PRO_CODE` to PRO_CM required-not-null list
-3. `POTENTIAL_CODE_ERRORS` — SNOMED expansion (DIAGNOSIS/CONDITION/LAB_RESULT_CM/OBS_CLIN)
-4. `DCQ_CHECK_REGISTRY` — new DC_3_18 row + updated DC_1_13 SOURCE_TABLES (48 -> 49 rows)
+**Session work completed (2026-07-20):**
+- Added `sql/dcq_checks/procedures/SP_DC_1_22.sql` — new check for SAS row 11 (LDSADRS_L3_CURRENT category=Y).
+- Added `DC_1_22` row to `snowflake/DCQ_CHECK_REGISTRY_data_full.json`. Registry now 50 rows.
+- Added `SP_DC_1_22.sql` to `deploy_selective.py` PROC_FILES + updated docstring.
+- Session notes: `.opencode/session-2026-07-20-dc-1-22.md`.
+- **DEPLOYED** via `python deploy_selective.py` — all 5 procs CREATE OR REPLACE succeeded, registry reloaded to 50 rows.
+- **SMOKE-TESTED** on 3 datasets:
+  - `CHAR_UFH.PUBLIC`: 942,572 rows / 942,572 patids / 0 excess — no fire (matches independent SQL sanity)
+  - `CHAR_UAB.PUBLIC`: 1,461,185 / 1,461,185 / 0 — no fire (matches independent SQL sanity)
+  - `CHAR_UAB.OVID_20260612`: 1,390,992 / 1,383,960 / 6,966 patids with multiple / 7,032 excess — **FIRES** (matches independent SQL sanity)
+  - Cleanup executed: 6 rows in `CHAR_UFH` + 12 rows in `CHAR_UAB` deleted from DCQ_RESULTS for TEST_1_22_* RUN_IDs.
 
-**Deploy tooling (all committed to repo in `45eea6d`):**
-- `deploy_selective.py` — focused deploy of ONLY the 4 artifacts above (does NOT touch other 46 procs, Streamlit app, or ref tables). Uses same `.env` / RSA key auth as `push_snowflake_assets.py`.
-- `rollback/01_capture_current_state.sql` — pre-deploy backup script (already run).
-- `rollback/02_restore_if_broken.sql` — recovery script (only needed if deploy breaks).
+**Snowflake state (post-deploy 2026-07-20):**
+- Deployed: `SP_DC_3_18` (with fix), `SP_DC_3_03_IVC`, `SP_DC_3_03_IVD`, `SP_DC_1_22`, `POTENTIAL_CODE_ERRORS`.
+- Legacy `SP_DC_3_03(VARCHAR x8)` and stray `SP_DC_3_03(VARCHAR x4)` both dropped.
+- Registry `CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY` = **50 rows**.
+- Backup clone `DCQ_CHECK_REGISTRY_BACKUP_20260715` still present (48 rows). Drop after confidence period.
 
-**Pre-deploy backups — COMPLETE:**
-- [x] Ran `GET_DDL` on `SP_DC_3_03(VARCHAR x8)` in Snowsight — user should save output to `rollback/captured_20260715_dc_3_03.sql` (needs confirmation).
-- [x] Ran `GET_DDL` on `POTENTIAL_CODE_ERRORS(VARCHAR,VARCHAR,VARCHAR)` in Snowsight — user should save output to `rollback/captured_20260715_pce.sql` (needs confirmation).
-- [x] Ran `CREATE OR REPLACE TABLE CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715 CLONE CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY;`
-- [x] Verified backup row count = **48** (matches expected pre-deploy count).
+**Verified against SAS (CHAR_UFH.PUBLIC is user's SAS-reference dataset):**
+- DC 3.18: PATIENTS_N=1,521,233, BOTH_N=302,041, PCT_BOTH=19.86%, FLAG=1 — matches SAS Table IB row 3.18.
+- DC 3.03 IVC (against CHAR_UAB.OVID_20260612): DISCHARGE_DISPOSITION now flagged at 10.02% missing — matches SAS.
+- POTENTIAL_CODE_ERRORS: 0 issues found; SNOMED (SM) rows now populated for CONDITION/LAB_RESULT_CM/OBS_CLIN/OBS_GEN.
+- **DC 1.22**: SAS predicate `z10_record > z10_distinct` translated to SQL exactly; independent SQL sanity queries confirm proc emits correct counts on all 3 tested datasets.
 
-**NEXT STEPS — resume here:**
+**Uncommitted repo changes (kept intentionally, will bundle with tomorrow's DC 1.22 work):**
+- `deploy_selective.py` — added optional passphrase-file support (`SNOWFLAKE_PRIVATE_KEY_PASSPHRASE_FILE` and `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` env vars). Backwards compatible — no-op when neither is set.
+- `.opencode/session-2026-07-16-dc-3-03-port.md` — rewritten with today's full session (deploy + verification + DC 3.18 fix + resume plan).
+- `.opencode/package.json`, `.opencode/package-lock.json` — untracked, OpenCode-managed, ignore.
 
-1. **(User task)** Confirm the two `GET_DDL` outputs were saved to files in `rollback/` — check terminal scrollback / Snowsight worksheet history.
+**Environmental prerequisites (already set up, verify on resume):**
+- `.env` at repo root with `SNOWFLAKE_USER=allison_burns_opencode`.
+- RSA key at `/processing/home/allison.burns/.snowflake/rsa_key_opencode.p8` (unencrypted, perms 600).
+- Public key registered in Snowflake (fingerprint `Jw+HkT/YN7eY+dxpVK4mKOMIhp+54XD7FK4H1vx1KXA=`).
+- Quick connectivity smoke test:
+  ```
+  python3 -c "import sys; sys.path.insert(0,'.'); import deploy_selective as ds; conn=ds.get_connection(); cs=conn.cursor(); cs.execute('SELECT CURRENT_USER(), CURRENT_ROLE()'); print(cs.fetchone())"
+  ```
+  Expected: `('ALLISON_BURNS_OPENCODE', '1FL-AZURE-DB-USERS')`
 
-2. **Dry-run the deploy:**
+**TOMORROW'S PLAN — add DC 1.22:**
+
+1. **Identify SAS source for DC 1.22.** Search:
    ```
-   python deploy_selective.py --dry-run
+   grep -in "1\.22\|row=1\.22" sas_code/extracted_newest/infolder/edc_report.sas
    ```
-   Expected: no errors, prints what would happen, does not touch Snowflake.
+2. **Choose a template proc** structurally similar to DC 1.22 requirements (candidates: `SP_DC_3_18.sql` for XTBL/threshold-flag pattern, `SP_DC_1_13.sql` for table-list-driven checks, `SP_DC_3_03_IVC.sql` for per-field-metric checks).
+3. **Create `sql/dcq_checks/procedures/SP_DC_1_22.sql`** following the 8-param signature and standard patterns. Remember: single quotes inside `AS '...'` body must be doubled (`''`).
+4. **Add registry row to `snowflake/DCQ_CHECK_REGISTRY_data_full.json`** — 50 rows total after this.
+5. **Update `deploy_selective.py`'s `PROC_FILES`** to include SP_DC_1_22.sql.
+6. **Deploy:** dry-run then real deploy.
+7. **Test-call:** `CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_1_22('CHAR_UFH','PUBLIC','TEST_1_22','ALL',NULL,NULL,NULL,NULL);` — compare against SAS output.
+8. **Streamlit end-to-end test** via `characterization_runner`.
+9. **Commit + push:** bundle `SP_DC_1_22.sql` + registry JSON + `deploy_selective.py` passphrase support + session notes rewrite + today's `66f241d` in the push. Push `add-dc-3-18-and-dc-1-13-snomed` to origin.
+10. **Merge to `main`** and delete branch (after user confirms).
 
-3. **Real deploy:**
-   ```
-   python deploy_selective.py
-   ```
-   Runs 4 operations in order: CREATE OR REPLACE SP_DC_3_18, SP_DC_3_03, POTENTIAL_CODE_ERRORS, then TRUNCATE + COPY INTO on the registry from `snowflake/DCQ_CHECK_REGISTRY_data_full.json`. Verifies final row count = 49.
-
-4. **Post-deploy smoke SQL in Snowsight:**
-   ```sql
-   SELECT COUNT(*) FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY;                    -- expect 49
-   SELECT CHECK_NAME, PROC_NAME, ENABLED FROM CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY
-     WHERE CHECK_NAME IN ('DC_3_18','DC_1_13','DC_3_03');
-   SHOW PROCEDURES LIKE 'SP_DC_3_18' IN SCHEMA CHARACTERIZATION.DCQ_CHECKS;
-   ```
-
-5. **Direct-call each of the 3 procs against a real target DB** (user has NOT yet picked which — likely a `CHAR_*` or `STAGE_*` database and its CDM schema, probably `PUBLIC`). Use `TEST_3_18`, `TEST_3_03`, `TEST_PCE` as RUN_IDs. Templates in the previous session's message:
-   - `CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_18('<DB>','<SCHEMA>','TEST_3_18','ALL',NULL,NULL,NULL,NULL);`
-   - `CALL CHARACTERIZATION.DCQ_CHECKS.SP_DC_3_03('<DB>','<SCHEMA>','TEST_3_03','PRO_CM',NULL,NULL,NULL,NULL);`
-   - `CALL CHARACTERIZATION.DCQ_CHECKS.POTENTIAL_CODE_ERRORS('<DB>','<SCHEMA>','ALL');`
-
-6. **Query the result tables** to confirm output shape:
-   - `SELECT * FROM <DB>.CHARACTERIZATION_DCQ.DCQ_RESULTS WHERE RUN_ID LIKE 'TEST_%';`
-   - `SELECT * FROM <DB>.CHARACTERIZATION.CODE_SUMMARY WHERE SOURCE_TABLE IN ('LAB_RESULT_CM','OBS_CLIN') ORDER BY SOURCE_TABLE, CODE_TYPE;` — should show new SNOMED (`SM`) code_type rows.
-
-7. **Streamlit end-to-end test:** Snowsight -> Streamlit -> `characterization_runner` (or `streamlit run streamlit/app.py` locally). Tab 1 (SP_RUN_DCQ), Mode=`ROW_NUM`, run each of `3.18`, `1.13`, `3.03` individually with `Max parallel=1`. Confirm the progress bar completes and results tab shows rows. No `streamlit/app.py` redeploy needed — app was not touched by this commit and reads registry at runtime.
-
-8. **(Optional) Full-registry parallel run** with Mode=`ALL`, Max parallel=10, to confirm no regressions on the other 46 checks. Expect 49 SUCCEEDED (or 48 + 1 known-broken SP_DC_2_07 failure — see Known Issues).
-
-9. **Merge + housekeeping:**
-   - `git checkout main && git merge --no-ff add-dc-3-18-and-dc-1-13-snomed && git push origin main`
-   - Delete branch on GitHub.
-   - Once satisfied: `DROP TABLE CHARACTERIZATION.DCQ.DCQ_CHECK_REGISTRY_BACKUP_20260715;`
-
-**Rollback recipes if deploy breaks something:**
-- **Proc SQL bad:** Nothing to do — Snowflake's CREATE OR REPLACE is atomic; the OLD version stays deployed if the new SQL is malformed.
-- **Proc has a logic bug that survives compilation:** paste the captured `GET_DDL` output back and run it in Snowsight.
-- **Registry corrupted/empty after TRUNCATE + COPY failure:** run `rollback/02_restore_if_broken.sql` (swaps `DCQ_CHECK_REGISTRY` back from the clone).
-- **Full undo of the whole deploy:** `DROP PROCEDURE SP_DC_3_18(VARCHAR x8);` + paste both captured DDLs + run `02_restore_if_broken.sql`.
+**Rollback recipes if a future deploy breaks something:**
+- **Proc SQL bad:** Snowflake's CREATE OR REPLACE is atomic; malformed SQL means old version stays.
+- **Registry corrupted after TRUNCATE + COPY:** run `rollback/02_restore_if_broken.sql` (restore from clone).
+- **Full undo of DC 3.03 port:** paste `sql/dcq_checks/procedures/_archive/SP_DC_3_03.sql` in Snowsight, DROP the IVC/IVD procs, restore registry from clone.
 
 **Doc drift noted (fix later, not urgent):**
 - `AGENTS.md` "Git & Remotes" section references a Bitbucket remote that doesn't exist. Only remote is GitHub `origin`.
@@ -244,6 +240,9 @@ characterization_on_snowflake/
 
 > Newest entries first.
 
+- **2026-07-20**: **DC 1.22 added.** New check `SP_DC_1_22` implements SAS row 11 / `LDSADRS_L3_CURRENT` category=Y (`edc_report.sas:4287,4298,4312,4613-4640`). Description: *"Patients have multiple current physical addresses in the LDS_ADDRESS_HISTORY table"* — fires when at least one PATID has multiple LDS_ADDRESS_HISTORY rows with `CURRENT_ADDRESS_FLAG='Y'`. Direct SAS predicate translation: flag if `COUNT(*) > COUNT(DISTINCT PATID)` in the `CURRENT_ADDRESS_FLAG='Y'` slice (SAS: `if z10_distinct < z10_record`). Emits 5 metrics: `CURRENT_ROW_N`, `CURRENT_PATID_DISTINCT_N`, `PATIDS_WITH_MULTIPLE_N`, `EXCESS_ROWS_N`, `MULTI_CURRENT_FLAG`. Threshold: `excess_rows_n_gt = 0`. Signature: standard 8-param; TARGET_TABLE accepts `ALL` or `LDS_ADDRESS_HISTORY`. Registry row `DC_1_22` added with `EDC_TABLE='Table IID'`, `PART='part1'`. Registry now 50 rows. `deploy_selective.py` PROC_FILES + docstring updated to include the new proc. Session notes: `.opencode/session-2026-07-20-dc-1-22.md`.
+- **2026-07-16 (evening)**: **DC 3.18 denominator fix (SAS parity).** `SP_DC_3_18` was computing `PCT_BOTH` against the wrong denominator, producing inflated ratios that never fired the threshold flag. The prior proc used `COUNT(DISTINCT PATID) FROM cohort` (the F2F ∩ LDS-valid intersection) as `PATIENTS_N`, which was also then the denominator. SAS Table IB row 3.18 (edc_report.sas 878-908) uses `denom_fipszip` = `ENC_L3_DASH2 period='5 yrs' distinct_patid_n` = the F2F 5yr cohort size **before** joining LDS_ADDRESS_HISTORY. Fixed: `PATIENTS_N` now returns the F2F 5yr cohort size (matching SAS denom); a new metric `INTERSECT_LDS_VALID_N` reports the F2F ∩ LDS-valid intersection (= the old buggy `PATIENTS_N`, kept for traceability with SAS `XTBL_L3_CFIPSZIP_5Y PATIENTS distinct_patid_n`); `PCT_BOTH = BOTH_N / PATIENTS_N * 100` (now correct). Verified on `CHAR_UFH.PUBLIC`: PATIENTS_N=1,521,233 / BOTH_N=302,041 / PCT_BOTH=19.86% / FLAG=1 — matches user's SAS reference numbers exactly. Cleaned up 28 stale pre-fix DC_3_18 rows from DCQ_RESULTS across 4 RUN_IDs in CHAR_UFH + CHAR_UAB. Commit `66f241d`.
+- **2026-07-16 (afternoon)**: **DC 3.03 IVC/IVD + DC 3.18 + POTENTIAL_CODE_ERRORS + registry deploy.** Ran `deploy_selective.py` against Snowflake: DROP legacy `SP_DC_3_03(VARCHAR x8)`, CREATE OR REPLACE `SP_DC_3_18` / `SP_DC_3_03_IVC` / `SP_DC_3_03_IVD` / `POTENTIAL_CODE_ERRORS`, TRUNCATE + COPY INTO `DCQ_CHECK_REGISTRY` (48 -> 49 rows). Additionally dropped stray legacy `SP_DC_3_03(VARCHAR x4)`. Smoke-tested all 4 procs against `CHAR_UAB.OVID_20260612` — all pass. Directly-verified DC 3.03 IVC flags `DISCHARGE_DISPOSITION` at 10.02% missing (the target bug fix). Also generated new RSA keypair `~/.snowflake/rsa_key_opencode.p8` for `allison_burns_opencode` Snowflake user and registered public key; extended `deploy_selective.py` to support optional passphrase-file env vars.
 - **2026-07-16**: **DC 3.03 full port to SAS v16.** Rewrote DC 3.03 as two distinct checks matching the SAS report structure. Not yet deployed (repo-only session).
   - **New procs:** `SP_DC_3_03_IVC` (SAS Table IVC, required tables) and `SP_DC_3_03_IVD` (SAS Table IVD, optional tables). Both auto-generated from `sas_code/parse_dc_3_03_catalog.py` reading `sas_code/extracted_newest/infolder/edc_report.sas`.
   - **IVC scope:** 52 fields across DEMOGRAPHIC (17), ENROLLMENT (2), ENCOUNTER (15), DIAGNOSIS (10), PROCEDURES (8). Flag list (10 fields): BIRTH_DATE, SEX, DX_ORIGIN, DX_SOURCE, DIA_ENCOUNTERID (ENCOUNTERID in DIAGNOSIS), DISCHARGE_DATE, DISCHARGE_DISPOSITION, PRO_ENCOUNTERID (ENCOUNTERID in PROCEDURES), PX_DATE, PX_SOURCE.
