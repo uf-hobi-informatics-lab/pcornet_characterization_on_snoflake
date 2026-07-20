@@ -126,11 +126,12 @@ AS '
             CURRENT_TIMESTAMP() AS processed_date
         FROM ${DB_PARAM}.${SCHEMA_NAME}.DIAGNOSIS 
         WHERE dx IS NOT NULL 
-          AND dx_type IN (''09'', ''10'')
+          AND dx_type IN (''09'', ''10'', ''SM'')
             `
         });
 
         // Create bad diagnosis records with validation rules
+        // SAS PCE v16 (2026-05-11): adds SNOMED (''SM'') heuristics -- length 6..18, no alpha, not all-zeros/all-nines.
         snowflake.execute({
              sqlText: `
              CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.BAD_DX AS
@@ -146,27 +147,37 @@ AS '
                 CASE 
                     WHEN code_type = ''09'' THEN CASE WHEN code_length NOT IN (3,4,5) THEN 1 ELSE 0 END
                     WHEN code_type = ''10'' THEN CASE WHEN code_length NOT IN (3,4,5,6,7) THEN 1 ELSE 0 END
+                    WHEN code_type = ''SM'' THEN CASE WHEN code_length < 6 OR code_length > 18 THEN 1 ELSE 0 END
                     ELSE 0
                 END AS unexp_length,
                 CASE 
                     WHEN code_type = ''09'' THEN CASE WHEN alpha_pos > 0 AND SUBSTR(code_clean, 1, 1) NOT IN (''E'', ''V'') THEN 1 ELSE 0 END
                     /* SAS PCE v15: unexp_alpha=1 when anydigit(code_clean)=1 */
                     WHEN code_type = ''10'' THEN CASE WHEN digit_pos = 1 THEN 1 ELSE 0 END
+                    WHEN code_type = ''SM'' THEN CASE WHEN alpha_pos > 0 THEN 1 ELSE 0 END
                     ELSE 0
                 END AS unexp_alpha,
                 CASE 
                     WHEN code_type = ''09'' THEN CASE WHEN SUBSTR(code_clean, 1, 3) IN (''000'') THEN 1 ELSE 0 END
                     WHEN code_type = ''10'' THEN CASE WHEN SUBSTR(code_clean, 1, 3) IN (''000'', ''999'') THEN 1 ELSE 0 END
+                    WHEN code_type = ''SM'' THEN
+                        CASE WHEN code_length = REGEXP_COUNT(code_clean, ''0'') OR code_length = REGEXP_COUNT(code_clean, ''9'') THEN 1 ELSE 0 END
                     ELSE 0
                 END AS unexp_string,
                 CASE 
-                    /* SAS PCE v15: unexp_numeric=1 when anydigit(code_clean)=0 */
+                    /* SAS PCE v15/v16: unexp_numeric N/A for SNOMED (SM); NULL for 09/10 handled below */
+                    WHEN code_type = ''SM'' THEN NULL
                     WHEN digit_pos = 0 THEN 1 ELSE 0
                 END AS unexp_numeric,
                 processed_date
             FROM ${DB_PARAM}.CHARACTERIZATION.DIAGNOSIS_VALIDATION
         ) s
-        WHERE GREATEST(unexp_length, unexp_alpha, unexp_string, unexp_numeric) = 1
+        WHERE GREATEST(
+            COALESCE(unexp_length, 0),
+            COALESCE(unexp_alpha, 0),
+            COALESCE(unexp_string, 0),
+            COALESCE(unexp_numeric, 0)
+        ) = 1
              `
          });
     }
@@ -499,54 +510,78 @@ AS '
     // ================================================================================
 
     if (tables_to_check.includes(''LAB_RESULT_CM'')) {
+        // SAS PCE v16 (2026-05-11): LAB_RESULT_CM also validates RESULT_SNOMED as code_type=''SM''
+        // in addition to LAB_LOINC as code_type=''LC''. Rows are unioned so each source column
+        // gets one validation record per non-null value.
         snowflake.execute({
             sqlText: `
             CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.LAB_RESULT_CM_VALIDATION AS
         SELECT 
             ''LAB_RESULT_CM'' AS table_name,
             lab_result_cm_id,
-            lab_loinc AS code,
-            ''LC'' AS code_type,
-            UPPER(REGEXP_REPLACE(lab_loinc, ''[.,\\\\\\\\s]'', '''')) AS code_clean,
-            REVERSE(UPPER(REGEXP_REPLACE(lab_loinc, ''[.,\\\\\\\\s]'', ''''))) AS code_clean_reversed,
-            LENGTH(UPPER(REGEXP_REPLACE(lab_loinc, ''[.,\\\\\\\\s]'', ''''))) AS code_length,
+            code,
+            code_type,
+            UPPER(REGEXP_REPLACE(code, ''[.,\\\\\\\\s]'', '''')) AS code_clean,
+            REVERSE(UPPER(REGEXP_REPLACE(code, ''[.,\\\\\\\\s]'', ''''))) AS code_clean_reversed,
+            LENGTH(UPPER(REGEXP_REPLACE(code, ''[.,\\\\\\\\s]'', ''''))) AS code_length,
             CASE 
-                WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(lab_loinc, ''[.,\\\\\\\\s]'', '''')), ''[A-Z]'') > 0 THEN 1 
+                WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(code, ''[.,\\\\\\\\s]'', '''')), ''[A-Z]'') > 0 THEN 1 
                 ELSE 0 
             END AS has_alpha,
             CASE 
-                WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(lab_loinc, ''[.,\\\\\\\\s]'', '''')), ''[0-9]'') > 0 THEN 1 
+                WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(code, ''[.,\\\\\\\\s]'', '''')), ''[0-9]'') > 0 THEN 1 
                 ELSE 0 
             END AS has_digit,
             CURRENT_TIMESTAMP() AS processed_date
-        FROM ${DB_PARAM}.${SCHEMA_NAME}.LAB_RESULT_CM 
-        WHERE lab_loinc IS NOT NULL
+        FROM (
+            SELECT lab_result_cm_id, lab_loinc AS code, ''LC'' AS code_type
+            FROM ${DB_PARAM}.${SCHEMA_NAME}.LAB_RESULT_CM
+            WHERE lab_loinc IS NOT NULL
+            UNION ALL
+            SELECT lab_result_cm_id, result_snomed AS code, ''SM'' AS code_type
+            FROM ${DB_PARAM}.${SCHEMA_NAME}.LAB_RESULT_CM
+            WHERE result_snomed IS NOT NULL
+        )
         `
     });
 
     snowflake.execute({
         sqlText: `
         CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.BAD_LAB AS
-        SELECT 
-            table_name,
-            lab_result_cm_id,
-            code,
-            code_type,
-            code_clean,
-            code_length,
-            CASE 
-                WHEN code_length < 3 OR code_length > 8 THEN 1 ELSE 0
-            END AS unexp_length,
-            CASE 
-                WHEN has_alpha > 0 THEN 1 ELSE 0
-            END AS unexp_alpha,
-            CASE 
-                WHEN SUBSTR(code_clean_reversed, 2, 1) != ''-'' THEN 1 ELSE 0
-            END AS unexp_string,
-            NULL AS unexp_numeric,
-            processed_date
-        FROM ${DB_PARAM}.CHARACTERIZATION.LAB_RESULT_CM_VALIDATION
-        WHERE (code_length < 3 OR code_length > 8 OR has_alpha > 0 OR SUBSTR(code_clean_reversed, 2, 1) != ''-'')
+        SELECT *
+        FROM (
+            SELECT 
+                table_name,
+                lab_result_cm_id,
+                code,
+                code_type,
+                code_clean,
+                code_length,
+                CASE 
+                    WHEN code_type = ''LC'' THEN CASE WHEN code_length < 3 OR code_length > 8 THEN 1 ELSE 0 END
+                    WHEN code_type = ''SM'' THEN CASE WHEN code_length < 6 OR code_length > 18 THEN 1 ELSE 0 END
+                    ELSE 0
+                END AS unexp_length,
+                CASE 
+                    WHEN code_type IN (''LC'', ''SM'') THEN CASE WHEN has_alpha > 0 THEN 1 ELSE 0 END
+                    ELSE 0
+                END AS unexp_alpha,
+                CASE 
+                    WHEN code_type = ''LC'' THEN CASE WHEN SUBSTR(code_clean_reversed, 2, 1) != ''-'' THEN 1 ELSE 0 END
+                    WHEN code_type = ''SM'' THEN
+                        CASE WHEN code_length = REGEXP_COUNT(code_clean, ''0'') OR code_length = REGEXP_COUNT(code_clean, ''9'') THEN 1 ELSE 0 END
+                    ELSE NULL
+                END AS unexp_string,
+                NULL AS unexp_numeric,
+                processed_date
+            FROM ${DB_PARAM}.CHARACTERIZATION.LAB_RESULT_CM_VALIDATION
+        ) s
+        WHERE GREATEST(
+            COALESCE(unexp_length, 0),
+            COALESCE(unexp_alpha, 0),
+            COALESCE(unexp_string, 0),
+            COALESCE(unexp_numeric, 0)
+        ) = 1
         `
     });
     }
@@ -581,10 +616,11 @@ AS '
                 CURRENT_TIMESTAMP() AS processed_date
             FROM ${DB_PARAM}.${SCHEMA_NAME}.CONDITION 
             WHERE condition IS NOT NULL 
-              AND condition_type IN (''09'', ''10'')
+              AND condition_type IN (''09'', ''10'', ''SM'')
             `
         });
 
+        // SAS PCE v16: adds SNOMED (''SM'') heuristics -- length 6..18, no alpha, not all-zeros/all-nines.
         snowflake.execute({
             sqlText: `
             CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.BAD_CONDITION AS
@@ -600,26 +636,37 @@ AS '
                     CASE 
                         WHEN code_type = ''09'' THEN CASE WHEN code_length NOT IN (3,4,5) THEN 1 ELSE 0 END
                         WHEN code_type = ''10'' THEN CASE WHEN code_length NOT IN (3,4,5,6,7) THEN 1 ELSE 0 END
+                        WHEN code_type = ''SM'' THEN CASE WHEN code_length < 6 OR code_length > 18 THEN 1 ELSE 0 END
                         ELSE 0
                     END AS unexp_length,
                     CASE 
                     WHEN code_type = ''09'' THEN CASE WHEN alpha_pos > 0 AND SUBSTR(code_clean, 1, 1) NOT IN (''E'', ''V'') THEN 1 ELSE 0 END
                         /* SAS PCE v15: unexp_alpha=1 when anydigit(code_clean)=1 */
                     WHEN code_type = ''10'' THEN CASE WHEN digit_pos = 1 THEN 1 ELSE 0 END
+                    WHEN code_type = ''SM'' THEN CASE WHEN alpha_pos > 0 THEN 1 ELSE 0 END
                         ELSE 0
                     END AS unexp_alpha,
                     CASE 
                         WHEN code_type = ''09'' THEN CASE WHEN SUBSTR(code_clean, 1, 3) IN (''000'') THEN 1 ELSE 0 END
                         WHEN code_type = ''10'' THEN CASE WHEN SUBSTR(code_clean, 1, 3) IN (''000'', ''999'') THEN 1 ELSE 0 END
+                        WHEN code_type = ''SM'' THEN
+                            CASE WHEN code_length = REGEXP_COUNT(code_clean, ''0'') OR code_length = REGEXP_COUNT(code_clean, ''9'') THEN 1 ELSE 0 END
                         ELSE 0
                     END AS unexp_string,
                     CASE 
+                    /* SAS PCE v16: unexp_numeric N/A for SNOMED */
+                    WHEN code_type = ''SM'' THEN NULL
                     WHEN digit_pos = 0 THEN 1 ELSE 0
                     END AS unexp_numeric,
                     processed_date
                 FROM ${DB_PARAM}.CHARACTERIZATION.CONDITION_VALIDATION
             ) s
-            WHERE GREATEST(unexp_length, unexp_alpha, unexp_string, unexp_numeric) = 1
+            WHERE GREATEST(
+                COALESCE(unexp_length, 0),
+                COALESCE(unexp_alpha, 0),
+                COALESCE(unexp_string, 0),
+                COALESCE(unexp_numeric, 0)
+            ) = 1
                 `
             });
         } catch (err) {
@@ -797,11 +844,11 @@ AS '
                     END AS unexp_alpha,
                     CASE 
                         WHEN code_type = ''LC'' THEN CASE WHEN SUBSTR(REVERSE(code_clean), 2, 1) != ''-'' THEN 1 ELSE 0 END
+                        WHEN code_type = ''SM'' THEN
+                            CASE WHEN code_length = REGEXP_COUNT(code_clean, ''0'') OR code_length = REGEXP_COUNT(code_clean, ''9'') THEN 1 ELSE 0 END
                         ELSE NULL
                     END AS unexp_string,
-                    CASE 
-                        WHEN has_digit = 0 THEN 1 ELSE 0
-                    END AS unexp_numeric,
+                    NULL AS unexp_numeric,
                     processed_date
                 FROM ${DB_PARAM}.CHARACTERIZATION.OBS_GEN_VALIDATION
             ) s
@@ -824,28 +871,39 @@ AS '
 
     if (tables_to_check.includes(''OBS_CLIN'')) {
         try {
+            // SAS PCE v16 (2026-05-11): OBS_CLIN sources both OBSCLIN_CODE (typed LC/SM) and
+            // OBSCLIN_RESULT_SNOMED (always typed ''SM''). Rows are unioned so each source column
+            // gets one validation record per non-null value.
             snowflake.execute({
                 sqlText: `
                 CREATE OR REPLACE TABLE ${DB_PARAM}.CHARACTERIZATION.OBS_CLIN_VALIDATION AS
             SELECT 
                 ''OBS_CLIN'' AS table_name,
                 obsclinid,
-                obsclin_code AS code,
-                obsclin_type AS code_type,
-                UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', '''')) AS code_clean,
-                LENGTH(UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', ''''))) AS code_length,
+                code,
+                code_type,
+                UPPER(REGEXP_REPLACE(code, ''[.,\\\\s]'', '''')) AS code_clean,
+                LENGTH(UPPER(REGEXP_REPLACE(code, ''[.,\\\\s]'', ''''))) AS code_length,
                 CASE 
-                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', '''')), ''[A-Z]'') > 0 THEN 1 
+                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(code, ''[.,\\\\s]'', '''')), ''[A-Z]'') > 0 THEN 1 
                     ELSE 0 
                 END AS has_alpha,
                 CASE 
-                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(obsclin_code, ''[.,\\\\s]'', '''')), ''[0-9]'') > 0 THEN 1 
+                    WHEN REGEXP_COUNT(UPPER(REGEXP_REPLACE(code, ''[.,\\\\s]'', '''')), ''[0-9]'') > 0 THEN 1 
                     ELSE 0 
                 END AS has_digit,
                 CURRENT_TIMESTAMP() AS processed_date
-            FROM ${DB_PARAM}.${SCHEMA_NAME}.OBS_CLIN
-            WHERE obsclin_code IS NOT NULL
-              AND obsclin_type IN (''LC'', ''SM'')
+            FROM (
+                SELECT obsclinid, obsclin_code AS code, obsclin_type AS code_type
+                FROM ${DB_PARAM}.${SCHEMA_NAME}.OBS_CLIN
+                WHERE obsclin_code IS NOT NULL
+                  AND obsclin_type IN (''LC'', ''SM'')
+                UNION ALL
+                SELECT obsclinid, obsclin_result_snomed AS code, ''SM'' AS code_type
+                FROM ${DB_PARAM}.${SCHEMA_NAME}.OBS_CLIN
+                WHERE obsclin_result_snomed IS NOT NULL
+                  AND obsclin_type IN (''LC'', ''SM'')
+            )
                 `
             });
 
@@ -872,11 +930,11 @@ AS '
                     END AS unexp_alpha,
                     CASE 
                         WHEN code_type = ''LC'' THEN CASE WHEN SUBSTR(REVERSE(code_clean), 2, 1) != ''-'' THEN 1 ELSE 0 END
+                        WHEN code_type = ''SM'' THEN
+                            CASE WHEN code_length = REGEXP_COUNT(code_clean, ''0'') OR code_length = REGEXP_COUNT(code_clean, ''9'') THEN 1 ELSE 0 END
                         ELSE NULL
                     END AS unexp_string,
-                    CASE 
-                        WHEN has_digit = 0 THEN 1 ELSE 0
-                    END AS unexp_numeric,
+                    NULL AS unexp_numeric,
                     processed_date
                 FROM ${DB_PARAM}.CHARACTERIZATION.OBS_CLIN_VALIDATION
             ) s

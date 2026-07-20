@@ -8,6 +8,10 @@ __pycache__/
 # Large binary files
 *.pdf
 *.zip
+# SAS source-code extracts (regenerate via `unzip sas_code/*.zip -d sas_code/extracted_*/`)
+sas_code/extracted/
+sas_code/extracted_old/
+sas_code/extracted_newest/
 # Snowflake JSON data (optional – keep if you want versioned)
 # *.json
 !snowflake/**/*.json
